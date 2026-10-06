@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Fleet Telemetry Architecture</title>
+<title>Fleet Telemetry Architecture (local)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
   :root{
@@ -29,7 +29,7 @@
 
   .stage{
     width:1920px;
-    height:780px;
+    height:830px;
     position:relative;
     margin:0 auto;
     background:#fff;
@@ -52,6 +52,7 @@
     padding:0 8px;
     font-size:13px;
     font-weight:700;
+    white-space:nowrap;
   }
 
   .box{
@@ -98,7 +99,7 @@
 
   svg.connectors{
     position:absolute; top:0; left:0;
-    width:1920px; height:780px;
+    width:1920px; height:830px;
     pointer-events:none;
   }
 
@@ -130,7 +131,7 @@
 <body>
 <div class="stage">
 
-  <div class="title">Fleet Telemetry — Confluent Cloud + Flink + Bedrock (RTCE &amp; MCP)</div>
+  <div class="title">Fleet Telemetry — local streamhouse: Kafka + Flink + Ollama + Iceberg (MCP)</div>
 
   <!-- SOURCES -->
   <div class="group orange" style="top:110px; left:20px; width:190px; height:220px;">
@@ -141,13 +142,13 @@
     <div class="sub">telemetry-simulator.js — continuous</div>
   </div>
   <div class="box orange" style="top:250px; left:35px; width:160px; height:60px;">
-    Seed Script
-    <div class="sub">generate_seed_data.py — one-shot</div>
+    Seed
+    <div class="sub">seed.js — one-shot backfill</div>
   </div>
 
-  <!-- CONFLUENT CLOUD OUTER -->
-  <div class="group blue" style="top:88px; left:240px; width:1260px; height:400px;">
-    <div class="group-label" style="color:var(--blue);">Confluent Cloud (terraform/) — raw topic &rarr; Flink &rarr; business topic &rarr; Flink &rarr; AI topic &rarr; RTCE</div>
+  <!-- DOCKER COMPOSE OUTER -->
+  <div class="group blue" style="top:88px; left:240px; width:1290px; height:580px;">
+    <div class="group-label" style="color:var(--blue);">docker compose — Apache Kafka 4.3 · Apache Flink 2.2 · Iceberg REST catalog · RustFS</div>
   </div>
 
   <!-- RAW TOPICS -->
@@ -159,13 +160,13 @@
   <div class="box red" style="top:266px; left:270px; width:130px; height:48px;">traffic.incidents</div>
   <div class="box red" style="top:324px; left:270px; width:130px; height:48px;">parcel.volume</div>
 
-  <!-- FLINK SQL JOIN -->
-  <div class="box purple" style="top:255px; left:450px; width:145px; height:80px;">
+  <!-- FLINK BUSINESS JOB -->
+  <div class="box purple" style="top:245px; left:445px; width:155px; height:95px;">
     Flink SQL
-    <div class="sub">business-derivation JOIN</div>
+    <div class="sub">fleet-business job<br>10-business.sql — rules +<br>per-vehicle z-score</div>
   </div>
-  <div class="callout" style="top:365px; left:400px; width:245px;">
-    heuristic rules turn raw signals into business objects (e.g. risk &amp; delay thresholds)
+  <div class="callout" style="top:372px; left:420px; width:200px;">
+    plain JSON; the Flink DDL is the schema contract (no registry)
   </div>
 
   <!-- BUSINESS TOPICS -->
@@ -173,71 +174,77 @@
     <div class="group-label" style="color:var(--red);">Business Topics</div>
   </div>
   <div class="box red" style="top:150px; left:645px; width:130px; height:48px;">maintenance.alerts</div>
-  <div class="box red" style="top:240px; left:645px; width:130px; height:48px;">driver.risk.events</div>
-  <div class="box red" style="top:330px; left:645px; width:130px; height:55px;">delivery.<wbr>performance.<wbr>events</div>
+  <div class="box red" style="top:225px; left:645px; width:130px; height:48px;">driver.risk.events</div>
+  <div class="box red" style="top:285px; left:645px; width:130px; height:55px;">driver.risk.<wbr>events.anomaly</div>
+  <div class="box red" style="top:360px; left:645px; width:130px; height:55px;">delivery.<wbr>performance.<wbr>events</div>
 
-  <!-- STREAMING AGENTS -->
+  <!-- AI JOB -->
   <div class="group purple" style="top:120px; left:815px; width:410px; height:340px;">
-    <div class="group-label" style="color:var(--purple);">Streaming Agents — AI Recommendations (always-on)</div>
+    <div class="group-label" style="color:var(--purple);">fleet-ai job — 20-ai.sql (always-on)</div>
   </div>
   <div class="box purple" style="top:150px; left:825px; width:150px; height:55px;">
-    <span class="tag">Flink: ML_PREDICT</span>
+    <span class="tag">ML_PREDICT</span>
     <div class="sub">Maintenance Advisor</div>
   </div>
   <div class="box pink" style="top:150px; left:1015px; width:195px; height:55px;">ai.maintenance.<wbr>recommendations</div>
-
   <div class="box purple" style="top:240px; left:825px; width:150px; height:55px;">
-    <span class="tag">Flink: ML_PREDICT</span>
+    <span class="tag">ML_PREDICT</span>
     <div class="sub">Safety Advisor</div>
   </div>
   <div class="box pink" style="top:240px; left:1015px; width:195px; height:55px;">ai.safety.recommendations</div>
-
-  <div class="box purple" style="top:330px; left:825px; width:150px; height:55px;">
-    <span class="tag">Flink: ML_PREDICT</span>
+  <div class="box purple" style="top:360px; left:825px; width:150px; height:55px;">
+    <span class="tag">ML_PREDICT</span>
     <div class="sub">Delivery Advisor</div>
   </div>
-  <div class="box pink" style="top:330px; left:1015px; width:195px; height:55px;">ai.delivery.recommendations</div>
+  <div class="box pink" style="top:360px; left:1015px; width:195px; height:55px;">ai.delivery.recommendations</div>
 
-  <!-- RTCE -->
-  <div class="box pink" style="top:255px; left:1275px; width:190px; height:110px; border-width:2.5px;">
-    RTCE
-    <div class="sub">Real-Time Context Engine / MCP<br>terraform/rtce.tf — all 10 topics</div>
+  <!-- LAKEHOUSE -->
+  <div class="box purple" style="top:150px; left:1275px; width:230px; height:75px;">
+    Flink SQL
+    <div class="sub">fleet-lakehouse job<br>30-lakehouse.sql — commit every checkpoint</div>
+  </div>
+  <div class="box green" style="top:290px; left:1275px; width:230px; height:95px;">
+    Apache Iceberg tables
+    <div class="sub">lake.fleet.* (7 derived topics)<br>REST catalog :8181 · RustFS :9000</div>
   </div>
 
-  <!-- CONSUMER UI TOP -->
-  <div class="group blue" style="top:120px; left:1560px; width:195px; height:210px;">
-    <div class="group-label" style="color:var(--blue);">Consumer UI</div>
-  </div>
-  <div class="box blue" style="top:155px; left:1573px; width:170px; height:55px;">Claude Code / Desktop</div>
-  <div class="box blue" style="top:250px; left:1573px; width:170px; height:55px;">VS Code Copilot</div>
-
-  <!-- BOTTOM: BEDROCK -->
-  <div class="box green" style="top:530px; left:955px; width:230px; height:80px;">
-    AWS Bedrock
-    <div class="sub">Claude Haiku 4.5, cross-region inference profile</div>
-  </div>
-
-  <!-- BOTTOM: fleet-context-engine -->
-  <div class="box teal" style="top:645px; left:955px; width:230px; height:95px;">
+  <!-- fleet-context-engine -->
+  <div class="box teal" style="top:510px; left:445px; width:420px; height:115px;">
     fleet-context-engine
-    <div class="sub">Kafka consumer + HTTP API :8787 — dashboard backend only</div>
+    <div class="sub">Kafka consumer (all 11 topics) · HTTP API + console :8787<br>MCP server /mcp — listTopics · getMetadata · queryData<br>(DuckDB SQL over the last 2,000 records per topic)<br>simulator · inject buttons · /api/ask chat agent</div>
   </div>
 
-  <!-- BOTTOM RIGHT: Consumer UI / Fleet Intelligence Console -->
-  <div class="group gray" style="top:530px; left:1560px; width:230px; height:225px;">
-    <div class="group-label" style="color:#5A5A5A;">Consumer UI</div>
+  <!-- OLLAMA (host) -->
+  <div class="group gray" style="top:700px; left:780px; width:470px; height:110px;">
+    <div class="group-label" style="color:#5A5A5A;">Host (outside Docker, Metal GPU)</div>
   </div>
-  <div class="box blue" style="top:635px; left:1575px; width:200px; height:95px;">
+  <div class="box green" style="top:725px; left:880px; width:270px; height:70px;">
+    Ollama — qwen2.5:3b
+    <div class="sub">OpenAI-compatible API :11434</div>
+  </div>
+
+  <!-- CONSUMERS -->
+  <div class="group blue" style="top:120px; left:1590px; width:300px; height:500px;">
+    <div class="group-label" style="color:var(--blue);">Consumers</div>
+  </div>
+  <div class="box blue" style="top:160px; left:1610px; width:260px; height:70px;">
+    DuckDB
+    <div class="sub">make duckdb — analytics over the Iceberg tables</div>
+  </div>
+  <div class="box blue" style="top:330px; left:1610px; width:260px; height:80px;">
+    MCP clients
+    <div class="sub">Claude Code / Desktop · VS Code Copilot<br>.vscode/mcp.json</div>
+  </div>
+  <div class="box blue" style="top:500px; left:1610px; width:260px; height:80px;">
     Fleet Intelligence Console
-    <div class="sub">live dashboard — polls HTTP API</div>
+    <div class="sub">live dashboard + chat — polls the HTTP API</div>
   </div>
 
   <!-- CONNECTORS -->
-  <svg class="connectors" viewBox="0 0 1920 780">
+  <svg class="connectors" viewBox="0 0 1920 830">
     <defs>
       <marker id="ah-gray" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#666"/></marker>
       <marker id="ah-purple" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#6C3FC5"/></marker>
-      <marker id="ah-pink" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#C0299B"/></marker>
       <marker id="ah-teal" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#0E8C7F"/></marker>
       <marker id="ah-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#2E9E4F"/></marker>
       <marker id="ah-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 z" fill="#2F5FD6"/></marker>
@@ -249,54 +256,62 @@
     <path d="M195,280 C 230,270 230,290 260,290" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
     <path d="M195,280 C 230,320 230,348 260,348" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
 
-    <!-- raw topics -> Flink SQL -->
-    <path d="M400,174 C 425,174 425,275 450,285" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
-    <path d="M400,232 C 425,232 425,280 450,290" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
-    <path d="M400,290 C 425,290 425,295 450,295" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
-    <path d="M400,348 C 425,348 425,305 450,300" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <!-- raw topics -> business job (telemetry + parcel volume) -->
+    <path d="M400,174 C 425,174 425,280 445,285" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <path d="M400,348 C 425,348 425,305 445,300" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
 
-    <!-- Flink SQL -> business topics -->
-    <path d="M595,280 C 615,280 615,174 645,174" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
-    <path d="M595,290 C 615,290 615,264 645,264" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
-    <path d="M595,300 C 615,300 615,358 645,358" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <!-- business job -> business topics -->
+    <path d="M600,275 C 620,275 620,174 645,174" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <path d="M600,285 C 620,285 620,249 645,249" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <path d="M600,295 C 620,295 620,312 645,312" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <path d="M600,305 C 620,305 620,387 645,387" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
 
-    <!-- business topics -> Flink ML_PREDICT -->
+    <!-- business topics -> ML_PREDICT -->
     <path d="M775,174 C 800,174 800,177 825,177" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
-    <path d="M775,264 C 800,264 800,267 825,267" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
-    <path d="M775,358 C 800,358 800,357 825,357" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <path d="M775,249 C 800,249 800,267 825,267" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <path d="M775,387 C 800,387 800,387 825,387" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
 
-    <!-- Flink ML_PREDICT -> ai.*.recommendations -->
-    <path d="M975,177 C 995,177 995,177 1015,177" stroke="#6C3FC5" stroke-width="1.6" fill="none" marker-end="url(#ah-purple)"/>
-    <path d="M975,267 C 995,267 995,267 1015,267" stroke="#6C3FC5" stroke-width="1.6" fill="none" marker-end="url(#ah-purple)"/>
-    <path d="M975,357 C 995,357 995,357 1015,357" stroke="#6C3FC5" stroke-width="1.6" fill="none" marker-end="url(#ah-purple)"/>
+    <!-- ML_PREDICT -> ai topics -->
+    <path d="M975,177 L1015,177" stroke="#6C3FC5" stroke-width="1.6" fill="none" marker-end="url(#ah-purple)"/>
+    <path d="M975,267 L1015,267" stroke="#6C3FC5" stroke-width="1.6" fill="none" marker-end="url(#ah-purple)"/>
+    <path d="M975,387 L1015,387" stroke="#6C3FC5" stroke-width="1.6" fill="none" marker-end="url(#ah-purple)"/>
 
-    <!-- ai.*.recommendations -> RTCE -->
-    <path d="M1210,177 C 1245,177 1245,290 1275,295" stroke="#C0299B" stroke-width="1.6" fill="none" marker-end="url(#ah-pink)"/>
-    <path d="M1210,267 C 1245,267 1245,305 1275,308" stroke="#C0299B" stroke-width="1.6" fill="none" marker-end="url(#ah-pink)"/>
-    <path d="M1210,357 C 1245,357 1245,320 1275,320" stroke="#C0299B" stroke-width="1.6" fill="none" marker-end="url(#ah-pink)"/>
+    <!-- ML_PREDICT <-> Ollama -->
+    <path d="M900,460 C 900,610 1080,640 1080,725" stroke="#2E9E4F" stroke-width="2.2" fill="none" marker-end="url(#ah-green)"/>
 
-    <!-- RTCE -> Consumer UI (MCP query) -->
-    <path d="M1465,295 C 1520,290 1520,182 1575,182" stroke="#C0299B" stroke-width="1.8" fill="none" marker-end="url(#ah-pink)"/>
-    <path d="M1465,320 C 1520,325 1520,277 1575,277" stroke="#C0299B" stroke-width="1.8" fill="none" marker-end="url(#ah-pink)"/>
+    <!-- derived topics -> lakehouse job (AI topics directly, business topics over the top) -->
+    <path d="M1210,177 C 1240,177 1245,188 1275,188" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <path d="M1210,267 C 1245,267 1245,205 1275,205" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <path d="M1210,387 C 1250,387 1250,215 1275,215" stroke="#666" stroke-width="1.6" fill="none" marker-end="url(#ah-gray)"/>
+    <path d="M785,140 C 795,104 810,100 860,100 L 1340,100 C 1385,100 1390,115 1390,150" stroke="#666" stroke-width="1.6" fill="none" stroke-dasharray="5,4" marker-end="url(#ah-gray)"/>
 
-    <!-- background consumer tails all 10 topics: raw topics -> fleet-context-engine -->
-    <path d="M335,468 C 400,560 700,640 955,690" stroke="#0E8C7F" stroke-width="2.2" fill="none" stroke-dasharray="0" marker-end="url(#ah-teal)"/>
+    <!-- lakehouse job -> Iceberg -> DuckDB -->
+    <path d="M1390,225 L1390,290" stroke="#2E9E4F" stroke-width="2" fill="none" marker-end="url(#ah-green)"/>
+    <path d="M1505,330 C 1560,330 1560,195 1610,195" stroke="#2F5FD6" stroke-width="2" fill="none" marker-end="url(#ah-blue)"/>
 
-    <!-- ML_PREDICT calls Bedrock x3 -->
-    <path d="M1020,468 L1020,530" stroke="#2E9E4F" stroke-width="2.2" fill="none" marker-end="url(#ah-green)"/>
+    <!-- all topics -> fleet-context-engine -->
+    <path d="M335,460 C 335,500 400,560 445,565" stroke="#0E8C7F" stroke-width="2" fill="none" marker-end="url(#ah-teal)"/>
+    <path d="M710,460 L710,510" stroke="#0E8C7F" stroke-width="2" fill="none" marker-end="url(#ah-teal)"/>
+    <path d="M1110,460 C 1110,520 940,560 865,565" stroke="#0E8C7F" stroke-width="2" fill="none" marker-end="url(#ah-teal)"/>
+    <!-- simulator / inject buttons produce back into raw topics -->
+    <path d="M445,600 C 300,600 230,420 300,372" stroke="#D9822B" stroke-width="1.6" fill="none" stroke-dasharray="5,4" marker-end="url(#ah-gray)"/>
 
-    <!-- fleet-context-engine -> Fleet Intelligence Console (HTTP API) -->
-    <path d="M1185,690 C 1350,690 1400,682 1575,682" stroke="#2F5FD6" stroke-width="2" fill="none" marker-end="url(#ah-blue)"/>
-
-    <!-- callout -> Flink SQL -->
-    <path d="M510,365 L520,335" stroke="#B08900" stroke-width="1.4" fill="none" stroke-dasharray="3,3"/>
+    <!-- fleet-context-engine -> consumers -->
+    <path d="M865,590 C 1250,600 1400,540 1610,540" stroke="#2F5FD6" stroke-width="2" fill="none" marker-end="url(#ah-blue)"/>
+    <path d="M865,540 C 1250,520 1400,370 1610,370" stroke="#2F5FD6" stroke-width="2" fill="none" marker-end="url(#ah-blue)"/>
+    <!-- /api/ask agent -> Ollama -->
+    <path d="M700,625 C 700,700 800,760 880,760" stroke="#2E9E4F" stroke-width="1.6" fill="none" stroke-dasharray="5,4" marker-end="url(#ah-green)"/>
   </svg>
 
-  <div class="edge-label" style="top:200px; left:210px;">continuous /<br>one-shot seed</div>
-  <div class="edge-label" style="top:570px; left:600px;">background consumer<br>tails all 10 topics</div>
-  <div class="edge-label" style="top:485px; left:1030px;">ML_PREDICT calls Bedrock (x3)</div>
-  <div class="edge-label" style="top:220px; left:1478px;">MCP query</div>
-  <div class="edge-label" style="top:665px; left:1330px;">HTTP API :8787</div>
+  <div class="edge-label" style="top:200px; left:205px;">continuous /<br>one-shot</div>
+  <div class="edge-label" style="top:600px; left:905px;">ML_PREDICT → /v1/chat/completions</div>
+  <div class="edge-label" style="top:92px; left:1100px;">business topics → lakehouse job</div>
+  <div class="edge-label" style="top:480px; left:330px;">tails all 11 topics</div>
+  <div class="edge-label" style="top:610px; left:255px;">simulator + inject buttons produce</div>
+  <div class="edge-label" style="top:708px; left:600px;">/api/ask agent</div>
+  <div class="edge-label" style="top:440px; left:1400px;">MCP /mcp</div>
+  <div class="edge-label" style="top:560px; left:1400px;">HTTP API :8787</div>
+  <div class="edge-label" style="top:240px; left:1525px;">SQL</div>
 
 </div>
 </body>

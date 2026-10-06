@@ -61,6 +61,7 @@ x-flink: &flink
     - flink-data:/flink-data
     - ./local/flink/sql:/opt/flink/sql:ro
     - ./local/flink/submit-jobs.sh:/opt/flink/bin/submit-jobs.sh:ro
+    - ./local/flink/sql-shell.sh:/opt/flink/bin/sql-shell.sh:ro
 
 services:
   kafka:

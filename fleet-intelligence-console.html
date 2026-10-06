@@ -397,7 +397,7 @@
           </section>
           <section id="bts-offline-note" style="display:none;">
             <h3>Note</h3>
-            <p style="font-size:11.5px;color:var(--steel);line-height:1.5;margin:0;">This diagram only animates against the real Confluent Cloud pipeline. Connect fleet-context-engine to LIVE mode (see SETUP.md) to see real hops here.</p>
+            <p style="font-size:11.5px;color:var(--steel);line-height:1.5;margin:0;">This diagram only animates against the real pipeline. Run the full stack with <code>docker compose up</code> (see README.md) to see real hops here.</p>
           </section>
         </aside>
 
@@ -422,14 +422,14 @@
 <script>
 /* ---------- setup ---------- */
 // Everything below reads from fleet-context-engine's real HTTP API - no
-// client-side simulation left. In LIVE mode that API is backed by a real
-// Kafka consumer over Confluent Cloud (context-engine.js); with no
-// Confluent Cloud env vars set, fleet-context-engine falls back to its own
+// client-side simulation left. In LOCAL mode that API is backed by a real
+// Kafka consumer over the local pipeline (context-engine.js); with no
+// KAFKA_BOOTSTRAP set, fleet-context-engine falls back to its own
 // SIMULATED in-memory engine so the console still has something to show
 // (clearly labeled via summary.source below), but the browser itself never
 // fabricates a number.
-// When this file is served by fleet-context-engine itself (npm start, or
-// deployed on Cloud Run) the API is same-origin, so relative paths work and
+// When this file is served by fleet-context-engine itself (docker compose
+// or npm start) the API is same-origin, so relative paths work and
 // avoid hardcoding a host. Opened directly as a local file:// (the original
 // "open fleet-intelligence-console.html" workflow), there is no origin to
 // be same-origin *with*, so fall back to the documented localhost:8787.
@@ -814,8 +814,14 @@ function animateNumber(id, targetText){
   }
   const decimals = Math.max(from.decimals, to.decimals);
   const startValue = from.value, endValue = to.value, startTime = performance.now(), duration = 500;
+  // A newer update for this element supersedes any tween still running.
+  const token = el._animToken = (el._animToken || 0) + 1;
   (function step(now){
-    const t = Math.min(1, (now - startTime) / duration);
+    if (el._animToken !== token) return;
+    // Clamped at 0 too: requestAnimationFrame's timestamp is the frame's
+    // start, which can be earlier than startTime, and a negative t would
+    // extrapolate below the starting value.
+    const t = Math.max(0, Math.min(1, (now - startTime) / duration));
     const current = startValue + (endValue - startValue) * t;
     el.textContent = to.prefix + current.toLocaleString('en-AU', {minimumFractionDigits:decimals, maximumFractionDigits:decimals}) + to.suffix;
     if (t < 1) requestAnimationFrame(step); else el.textContent = targetText;

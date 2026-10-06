@@ -84,10 +84,8 @@ async function readJsonBody(req) {
   }
 }
 
-// Cloud Run injects PORT (typically 8080) and expects the container to
-// listen on it; HTTP_PORT is this project's own pre-existing local-dev
-// override (see SETUP.md/setup-demo.md), kept for anyone with it already
-// set. 8787 remains the plain local-dev default.
+// PORT or HTTP_PORT override the listening port (the Dockerfile sets PORT);
+// 8787 is the default. docker-compose.yml maps it to APP_PORT on the host.
 export function startHttpServer(port = process.env.PORT || process.env.HTTP_PORT || 8787) {
   const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {

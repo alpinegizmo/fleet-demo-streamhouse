@@ -229,16 +229,19 @@ class LiveContextEngine {
         } catch {
           return; // skip anything that isn't valid JSON
         }
-        // Real basis for the "events/sec" KPI: every message consumed,
-        // across all 11 topics, timestamped and trimmed to a 10s window.
-        const now = Date.now();
-        this._recentMsgTimestamps.push(now);
-        this._recentMsgTimestamps = this._recentMsgTimestamps.filter((t) => now - t < 10000);
         this._applyRecord(topic, record);
         remember(topic, record, message.timestamp); // for SQL via MCP - see query-store.js
 
+        // Everything below is about live traffic only, not the history this
+        // consumer replays on startup (see pulseCatchupTarget above).
         const target = pulseCatchupTarget.get(`${topic}:${partition}`) ?? 0;
-        if (Number(message.offset) >= target) this._recordPipelinePulse(topic, record);
+        if (Number(message.offset) < target) return;
+        this._recordPipelinePulse(topic, record);
+        // Real basis for the "events/sec" KPI: every message that arrived
+        // live, across all 11 topics, timestamped and trimmed to a 10s window.
+        const now = Date.now();
+        this._recentMsgTimestamps.push(now);
+        this._recentMsgTimestamps = this._recentMsgTimestamps.filter((t) => now - t < 10000);
       },
     });
 
@@ -390,9 +393,13 @@ class LiveContextEngine {
     }
   }
 
+  // Keeps the newest 200 per domain, not 200 overall: safety events arrive
+  // ~30x as often as maintenance alerts, so a single shared cap pushed every
+  // maintenance recommendation out within seconds.
   _pushRecommendation(domain, vehicleId, text, severity) {
     this.recommendations.unshift({ domain, vehicleId, text, severity, timestamp: new Date().toISOString() });
-    this.recommendations = this.recommendations.slice(0, 200);
+    const perDomain = {};
+    this.recommendations = this.recommendations.filter((r) => (perDomain[r.domain] = (perDomain[r.domain] || 0) + 1) <= 200);
   }
 
   _pushPulseHop(node, edge, detail) {
@@ -844,7 +851,7 @@ class SimulatedContextEngine {
       this._recordEvent();
 
       // Mirrors the real driver.risk.events schema/thresholds
-      // (terraform/flink_statements.tf's derive_driver_risk_events), so
+      // (local/flink/sql/10-business.sql), so
       // getFleetSummary()'s rolling-window stats work identically in both
       // modes.
       const riskLevel = (v.overspeed && harshBrakingScore > 0.7) ? 'high' : (v.overspeed || harshBrakingScore > 0.7) ? 'medium' : 'low';
@@ -1051,7 +1058,7 @@ class SimulatedContextEngine {
   }
 
   // The Behind the Scenes tab's diagram is only meaningful against the real
-  // Confluent Cloud pipeline (real topic arrivals, real Tableflow sync) - in
+  // pipeline (real topic arrivals, real Iceberg commits) - in
   // SIMULATED mode there's nothing genuine to animate, so this reports
   // "not live" instead of fabricating pulses, matching this file's own rule
   // that the browser never gets to see a made-up number.

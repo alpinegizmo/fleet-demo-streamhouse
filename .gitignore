@@ -5,42 +5,22 @@
 node_modules/
 npm-debug.log*
 
-# Python
-__pycache__/
-*.pyc
+# Local secrets and overrides - never commit; fleet-context-engine/.env.example
+# is the tracked template
+.env
+.env.*
+!.env.example
 
-# Terraform (mirrors terraform/.gitignore; kept at root as a backstop)
+# Claude Code local/machine-specific settings
+.claude/settings.local.json
+
+# Leftovers from the Confluent Cloud version of this demo (terraform/ state
+# and tfvars may still exist in local checkouts - keep them out of git)
 **/*.tfstate
 **/*.tfstate.*
 **/.terraform/
 **/.terraform.lock.hcl
 **/terraform.tfvars
 **/*.auto.tfvars
-**/crash.log
-
-# Claude Code local/machine-specific settings
-.claude/settings.local.json
-
-# RTCE Global-scoped API key/secret for the MCP-as-REST proxy (never commit)
 .rtce-credentials
 fleet-context-engine/.rtce-credentials
-
-# Local secrets (Confluent Cloud/RTCE/OpenAI credentials) - never commit;
-# fleet-context-engine/.env.example is the tracked template
-.env
-.env.*
-!.env.example
-
-# Same secrets, staged for `gcloud run services update --env-vars-file`
-.cloudrun-env.yaml
-
-# Generated demo data (regenerate via seed-data/generate_seed_data.py)
-out/
-seed-data/out/
-seed-data/__pycache__/
-
-# Ad-hoc Confluent Cloud console export, not part of the checked-in project
-Download messages as CSV_2026-07-31T00_13_42.917Z.csv
-
-# Editable diagram source, not part of the checked-in project
-docs/architecture-diagram.drawio
