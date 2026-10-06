@@ -1,8 +1,9 @@
-# Local fleet telemetry demo: Apache Kafka + the fleet-context-engine app.
-# (Flink, the local LLM and the Iceberg lakehouse are added in later phases -
-# see PLAN-local-docker.md.)
+# Local fleet telemetry demo: Apache Kafka, Apache Flink, and the
+# fleet-context-engine app. (The local LLM and the Iceberg lakehouse are
+# added in later phases - see PLAN-local-docker.md.)
 #
 #   docker compose up --build        # then open http://localhost:8787 (or $APP_PORT)
+#                                    # Flink UI: http://localhost:8081
 #   docker compose down -v           # stop and delete all data
 
 name: fleet
@@ -21,6 +22,23 @@ x-topics: &topics
     ai.maintenance.recommendations:1
     ai.safety.recommendations:1
     ai.delivery.recommendations:1
+
+x-flink: &flink
+  build: local/flink
+  image: fleet-flink:2.2.1
+  environment:
+    FLINK_PROPERTIES: |
+      jobmanager.rpc.address: flink-jobmanager
+      rest.address: flink-jobmanager
+      jobmanager.memory.process.size: 1024m
+      taskmanager.memory.process.size: 2048m
+      taskmanager.numberOfTaskSlots: 8
+      parallelism.default: 1
+      execution.checkpointing.interval: 30s
+      execution.checkpointing.dir: file:///flink-data/checkpoints
+  volumes:
+    - flink-data:/flink-data
+    - ./local/flink/sql:/opt/flink/sql:ro
 
 services:
   kafka:
@@ -41,6 +59,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data   # the image defaults to /tmp, which a restart wipes
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -64,6 +83,33 @@ services:
         done
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
 
+  flink-jobmanager:
+    <<: *flink
+    command: jobmanager
+    ports:
+      - "8081:8081"   # Flink web UI
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  flink-taskmanager:
+    <<: *flink
+    command: taskmanager
+    depends_on:
+      flink-jobmanager: { condition: service_healthy }
+
+  # One-shot: submits the SQL jobs in local/flink/sql (skipping any already
+  # running). After editing a job:
+  #   docker compose run --rm flink-sql-init submit-jobs.sh --replace
+  flink-sql-init:
+    <<: *flink
+    command: submit-jobs.sh
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+      flink-taskmanager: { condition: service_started }
+
   seed:
     build: .
     depends_on:
@@ -85,3 +131,4 @@ services:
 
 volumes:
   kafka-data:
+  flink-data:

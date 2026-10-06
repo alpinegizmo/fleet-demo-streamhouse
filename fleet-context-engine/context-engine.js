@@ -290,8 +290,8 @@ class LiveContextEngine {
         this.driverRiskEvents = this.driverRiskEvents.slice(0, 200);
         break;
       }
-      // The AI_DETECT_ANOMALIES experiment (derive_driver_risk_events_anomaly
-      // in terraform-us-west-2*/flink_statements.tf) - deliberately kept
+      // The per-vehicle z-score baseline (local/flink/sql/10-business.sql) -
+      // deliberately kept
       // separate from the 'driver.risk.events' case above rather than
       // merging into the same vehicle.driverRisk/overspeed fields, so the
       // existing Safety tab keeps showing today's heuristic unchanged and
@@ -483,7 +483,7 @@ class LiveContextEngine {
     return filtered.slice(0, limit);
   }
 
-  // Whether AI_DETECT_ANOMALIES corroborates a single heuristic event -
+  // Whether the per-vehicle baseline corroborates a single heuristic event -
   // exposed per-event (via getDriverRiskEvents below) rather than only as an
   // aggregate, so the verdict on any one card is independently checkable
   // instead of something the console just asserts.
@@ -502,7 +502,7 @@ class LiveContextEngine {
   //
   // Only the OVERSPEED half of the heuristic is compared at all - the other
   // half (harsh_braking_score > 0.7) flags on a signal this AI job was never
-  // given (AI_DETECT_ANOMALIES here only watches speed_kmh), so there is no
+  // given (the baseline job only watches speed_kmh), so there is no
   // fair verdict to render for those; they're labeled 'not-evaluated'
   // instead of being silently counted as either confirmed or noise.
   _riskVerdict(e, anomalyEvents, matchWindowMs) {
@@ -512,8 +512,8 @@ class LiveContextEngine {
   }
 
   // Raw driver.risk.events feed (today's fixed-threshold heuristic),
-  // enriched with aiVerdict (see _riskVerdict) - and its AI_DETECT_ANOMALIES
-  // counterpart - exposed side by side for the Safety tab's before/after
+  // enriched with aiVerdict (see _riskVerdict) - and its per-vehicle
+  // baseline counterpart - exposed side by side for the Safety tab's before/after
   // comparison panel.
   async getDriverRiskEvents(vehicleId, limit = 10) {
     const filtered = vehicleId ? this.driverRiskEvents.filter((e) => e.vehicleId === vehicleId) : this.driverRiskEvents;
@@ -608,8 +608,8 @@ class LiveContextEngine {
 
   // Demo control: produces a REAL vehicle.telemetry record with speed far
   // outside the simulator's normal 0-110 km/h range, so the real
-  // AI_DETECT_ANOMALIES pipeline (driver.risk.events.anomaly) flags a
-  // genuine anomaly within its normal processing + checkpoint latency,
+  // per-vehicle baseline job (driver.risk.events.anomaly) flags a
+  // genuine anomaly within a few seconds,
   // instead of waiting for the random walk to happen to drift there -
   // useful for recording a demo without an open-ended wait. The heuristic
   // (driver.risk.events) will also fire on this via its own OVERSPEED
@@ -646,7 +646,7 @@ class LiveContextEngine {
       geozone_ids: [geozone],
     };
     await produceRecord('vehicle.telemetry', record);
-    return { id, geozone, speedKmh: spikeSpeed, injected: 'speed_anomaly', note: 'Real record produced to vehicle.telemetry with speed far outside baseline. The heuristic will flag it immediately (OVERSPEED); AI_DETECT_ANOMALIES needs a checkpoint to commit before it shows up in driver.risk.events.anomaly, usually well under a minute but can occasionally take longer.' };
+    return { id, geozone, speedKmh: spikeSpeed, injected: 'speed_anomaly', note: 'Real record produced to vehicle.telemetry with speed far outside baseline. Both the heuristic (OVERSPEED) and the per-vehicle baseline should flag it in driver.risk.events / driver.risk.events.anomaly within a few seconds.' };
   }
 
   // Demo control: HARD reset. Purges all 11 real topics (see
@@ -731,8 +731,8 @@ class SimulatedContextEngine {
     this.parcelVolumeLog = [];
     this.recommendations = [];
     this.driverRiskEvents = [];
-    // No simulated equivalent of driver.risk.events.anomaly - AI_DETECT_
-    // ANOMALIES only runs against the real Confluent Cloud Flink pipeline.
+    // No simulated equivalent of driver.risk.events.anomaly - the baseline
+    // only runs in the real Flink pipeline.
     // Left permanently empty rather than fabricated, per getDriverRiskAnomalyEvents below.
     this.driverRiskAnomalyEvents = [];
     this.deliveryPerformanceEvents = [];
@@ -988,7 +988,7 @@ class SimulatedContextEngine {
     return incident;
   }
 
-  // No real AI_DETECT_ANOMALIES to trigger in SIMULATED mode - just bumps
+  // No real baseline job to trigger in SIMULATED mode - just bumps
   // the vehicle's own (already-simulated) speed and driverRisk fields, same
   // as the rest of tick()'s heuristic, rather than fabricating an anomaly
   // verdict this mode has no real pipeline to back up.
@@ -998,7 +998,7 @@ class SimulatedContextEngine {
     v.speed = 150;
     v.overspeed = true;
     v.driverRisk = Math.max(v.driverRisk, 80);
-    return { id: v.id, geozone: v.geozone, speedKmh: v.speed, injected: 'speed_anomaly', note: 'SIMULATED mode - no real AI_DETECT_ANOMALIES feed to confirm this against.' };
+    return { id: v.id, geozone: v.geozone, speedKmh: v.speed, injected: 'speed_anomaly', note: 'SIMULATED mode - no real baseline feed to confirm this against.' };
   }
 
   // The Behind the Scenes tab's diagram is only meaningful against the real

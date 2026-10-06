@@ -287,17 +287,18 @@
         <div class="feed" id="feed-safety" style="max-height:280px;"></div>
       </div>
 
-      <h2 class="pagehead" style="font-size:16px;margin-top:22px;">Heuristic vs. AI_DETECT_ANOMALIES</h2>
+      <h2 class="pagehead" style="font-size:16px;margin-top:22px;">Heuristic vs. per-vehicle baseline</h2>
       <p class="sub">Same raw telemetry, two ways of flagging a driver-risk event: <b>driver.risk.events</b> uses a
         fixed threshold (speed &gt; 95 km/h or a harsh-braking score &gt; 0.7) applied identically to every vehicle.
-        <b>driver.risk.events.anomaly</b> replaces the speed half of that with <code>AI_DETECT_ANOMALIES</code>,
-        which learns each vehicle's own normal speed baseline and only fires when it deviates from that baseline.
-        The comparison below only covers the <b>overspeed</b> half of the heuristic - AI_DETECT_ANOMALIES here only
+        <b>driver.risk.events.anomaly</b> replaces the speed half of that with a per-vehicle z-score in Flink SQL:
+        each reading is compared with the mean and standard deviation of that vehicle's own previous 30 speeds, and flagged
+        only when it's more than 3 standard deviations away. The comparison below only covers the <b>overspeed</b> half
+        of the heuristic - the baseline job only
         watches speed, so harsh-braking alerts (<span id="cmp-braking-only">0</span> in this window) aren't something
         it can confirm or refute, and every card in both feeds below shows its own verdict rather than just a total.</p>
       <div class="grid" style="grid-template-columns:repeat(4,1fr);">
         <div class="card"><div class="lbl">Overspeed alerts (<span id="cmp-window">15</span> min)</div><div class="val" id="cmp-heuristic">0</div><div class="delta" style="color:var(--steel);">speed &gt; 95 km/h, every vehicle</div></div>
-        <div class="card"><div class="lbl">...normal for that vehicle per AI</div><div class="val warn" id="cmp-noise">0</div><div class="delta warn">no corroborating anomaly nearby</div></div>
+        <div class="card"><div class="lbl">...normal for that vehicle</div><div class="val warn" id="cmp-noise">0</div><div class="delta warn">no corroborating anomaly nearby</div></div>
         <div class="card"><div class="lbl">AI-flagged anomalies</div><div class="val" id="cmp-anomaly">0</div><div class="delta" style="color:var(--steel);">per-vehicle baseline</div></div>
         <div class="card"><div class="lbl">...missed by fixed threshold</div><div class="val" id="cmp-missed" style="color:var(--red-dim);">0</div><div class="delta" style="color:var(--red-dim);">real deviations, never &gt; 95 km/h</div></div>
       </div>
@@ -307,7 +308,7 @@
           <div class="feed" id="feed-risk-heuristic"></div>
         </div>
         <div class="feedcard" style="height:320px;">
-          <h3>AI_DETECT_ANOMALIES <span style="font-size:10px;color:var(--steel);font-weight:400;">driver.risk.events.anomaly</span></h3>
+          <h3>Per-vehicle baseline <span style="font-size:10px;color:var(--steel);font-weight:400;">driver.risk.events.anomaly</span></h3>
           <div class="feed" id="feed-risk-anomaly"></div>
         </div>
       </div>
@@ -667,7 +668,7 @@ function renderSafetyTable(vehicles){
 
 /* ---------- expected-range bar (anomaly cards only) ----------
    The heuristic gives no sense of "how far outside normal" - just a
-   threshold crossed or not. This draws the vehicle's own AI_DETECT_ANOMALIES
+   threshold crossed or not. This draws the vehicle's own baseline
    expected band (lower_bound..upper_bound, shaded) with a marker for the
    actual speed, so a barely-outside-band anomaly reads differently at a
    glance than a wildly-outside one. */
@@ -698,7 +699,7 @@ function aiVerdictBadge(verdict){
   return '';
 }
 
-/* ---------- driver-risk event feeds (heuristic vs. AI_DETECT_ANOMALIES) ----------
+/* ---------- driver-risk event feeds (heuristic vs. per-vehicle baseline) ----------
    Both render the same shape of card as renderFeed's recommendation feed
    (same .feed/.rec classes, column-reverse) but from the two raw event
    topics rather than ai.safety.recommendations, so the difference in what
@@ -711,7 +712,7 @@ function renderRiskEventFeed(elId, events, kind){
     const empty = document.createElement('div');
     empty.style.cssText = 'margin:auto;text-align:center;color:var(--steel);font-size:12px;padding:20px;max-width:220px;';
     empty.textContent = kind === 'anomaly'
-      ? 'No anomalies flagged yet - AI_DETECT_ANOMALIES needs a few dozen data points per vehicle to learn a baseline before it can flag a deviation.'
+      ? 'No anomalies flagged yet - the baseline needs 10 previous readings per vehicle before it can flag a deviation.'
       : 'No heuristic risk events yet - waiting for a vehicle to overspeed or brake harshly.';
     feed.appendChild(empty);
     return;
@@ -1047,7 +1048,7 @@ document.getElementById('liveSpeedAnomalyBtn').addEventListener('click', async (
   if (!liveConnected){ alert('Not connected to fleet-context-engine — see SETUP.md to enable LIVE mode.'); return; }
   try {
     const result = await liveFetch('/api/inject-speed-anomaly', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
-    alert('Injected a ' + result.speedKmh + ' km/h spike on ' + result.id + ' in ' + result.geozone + '. ' + (result.note||'') + '\n\nCheck the Safety tab’s Heuristic vs. AI_DETECT_ANOMALIES panel in a few seconds.');
+    alert('Injected a ' + result.speedKmh + ' km/h spike on ' + result.id + ' in ' + result.geozone + '. ' + (result.note||'') + '\n\nCheck the Safety tab’s Heuristic vs. per-vehicle baseline panel in a few seconds.');
   } catch (err) {
     alert('Failed to inject: ' + err.message);
   }
