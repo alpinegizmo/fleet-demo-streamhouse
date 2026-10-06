@@ -150,6 +150,10 @@ CREATE TABLE `parcel.volume` (
 --
 -- Written keyed by vehicle_id ('key.fields'), so all of one vehicle's
 -- events stay in order on one partition for downstream consumers.
+--
+-- The kafka_* columns on these and the AI tables expose each record's Kafka
+-- metadata. They're VIRTUAL: readable (30-lakehouse.sql copies them into
+-- Iceberg), but not part of the value written to Kafka.
 
 CREATE TABLE `maintenance.alerts` (
   vehicle_id STRING,
@@ -157,7 +161,10 @@ CREATE TABLE `maintenance.alerts` (
   engine_temp_c DOUBLE,
   severity STRING,
   message STRING,
-  event_time STRING
+  event_time STRING,
+  kafka_partition INT METADATA FROM 'partition' VIRTUAL,
+  kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
+  kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
 ) WITH (
   'connector' = 'kafka',
   'topic' = 'maintenance.alerts',
@@ -179,7 +186,10 @@ CREATE TABLE `driver.risk.events` (
   overspeed_status STRING,
   harsh_braking_score DOUBLE,
   risk_level STRING,
-  event_time STRING
+  event_time STRING,
+  kafka_partition INT METADATA FROM 'partition' VIRTUAL,
+  kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
+  kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
 ) WITH (
   'connector' = 'kafka',
   'topic' = 'driver.risk.events',
@@ -202,7 +212,10 @@ CREATE TABLE `driver.risk.events.anomaly` (
   lower_bound DOUBLE,
   upper_bound DOUBLE,
   risk_level STRING,
-  event_time STRING
+  event_time STRING,
+  kafka_partition INT METADATA FROM 'partition' VIRTUAL,
+  kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
+  kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
 ) WITH (
   'connector' = 'kafka',
   'topic' = 'driver.risk.events.anomaly',
@@ -223,7 +236,10 @@ CREATE TABLE `delivery.performance.events` (
   parcels_onboard INT,
   parcels_delivered_last_hour INT,
   performance_status STRING,
-  event_time STRING
+  event_time STRING,
+  kafka_partition INT METADATA FROM 'partition' VIRTUAL,
+  kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
+  kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
 ) WITH (
   'connector' = 'kafka',
   'topic' = 'delivery.performance.events',
@@ -245,7 +261,10 @@ CREATE TABLE `ai.maintenance.recommendations` (
   geozone STRING,
   severity STRING,
   trigger_event STRING,
-  recommendation STRING
+  recommendation STRING,
+  kafka_partition INT METADATA FROM 'partition' VIRTUAL,
+  kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
+  kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
 ) WITH (
   'connector' = 'kafka',
   'topic' = 'ai.maintenance.recommendations',
@@ -265,7 +284,10 @@ CREATE TABLE `ai.safety.recommendations` (
   geozone STRING,
   risk_level STRING,
   speed_kmh DOUBLE,
-  recommendation STRING
+  recommendation STRING,
+  kafka_partition INT METADATA FROM 'partition' VIRTUAL,
+  kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
+  kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
 ) WITH (
   'connector' = 'kafka',
   'topic' = 'ai.safety.recommendations',
@@ -285,7 +307,10 @@ CREATE TABLE `ai.delivery.recommendations` (
   geozone STRING,
   performance_status STRING,
   parcels_onboard INT,
-  recommendation STRING
+  recommendation STRING,
+  kafka_partition INT METADATA FROM 'partition' VIRTUAL,
+  kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
+  kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
 ) WITH (
   'connector' = 'kafka',
   'topic' = 'ai.delivery.recommendations',

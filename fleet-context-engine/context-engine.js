@@ -73,19 +73,26 @@ function severityToRisk(severity) {
 // Behind the Scenes tab). Each hop below is a (node, edge) pair in that tab's
 // diagram - a topic arrival fires every hop in its list, in order, so the
 // animation can show the real journey: raw telemetry -> Kafka -> Flink
-// business rules -> Flink+LLM -> the served in-memory model -> its three
-// real consumers (this console, RTCE agents, and Tableflow -> Snowflake).
-// Business-topic arrivals only render the first hop (Kafka -> Flink) since
-// their onward journey to serve/app isn't separately observable until the AI
-// recommendation for them arrives - Tableflow materializes both business and
-// AI topics directly, but only the AI-topic path is animated all the way
-// through, to keep the diagram legible.
+// business rules -> Flink+LLM -> the served in-memory model -> its real
+// consumers (this console and MCP agents). Business-topic arrivals only
+// render the first hop (Kafka -> Flink) since their onward journey to
+// serve/app isn't separately observable until the AI recommendation for them
+// arrives.
+//
+// The diagram's Iceberg and DuckDB nodes (still keyed 'tableflow' and
+// 'snowflake', after the Confluent Cloud services they stand in for) aren't
+// driven by topic arrivals at all: they pulse when Flink actually commits a
+// new Iceberg snapshot - see _watchIceberg.
 const AI_HOPS = [
   { node: 'flinkAi', edge: 'flinkBusiness-flinkAi' },
   { node: 'serve', edge: 'flinkAi-serve' },
   { node: 'app', edge: 'serve-app' },
-  { node: 'tableflow', edge: 'serve-tableflow' },
-  { node: 'snowflake', edge: 'tableflow-snowflake' },
+];
+
+// The Iceberg tables written by local/flink/sql/30-lakehouse.sql.
+const LAKE_TABLES = [
+  'maintenance_alerts', 'driver_risk_events', 'driver_risk_events_anomaly', 'delivery_performance_events',
+  'ai_maintenance_recommendations', 'ai_safety_recommendations', 'ai_delivery_recommendations',
 ];
 const TOPIC_PULSE_HOPS = {
   'vehicle.telemetry': [{ node: 'kafka', edge: 'source-kafka' }],
@@ -143,6 +150,44 @@ class LiveContextEngine {
     this.kafka = getKafka();
 
     this._consuming = this._startConsumer();
+    this._watchIceberg();
+  }
+
+  // Polls the Iceberg REST catalog (ICEBERG_REST_URL) for each lakehouse
+  // table's latest snapshot. A new snapshot means Flink just committed rows
+  // that DuckDB (or any Iceberg engine) can now query - that's what the
+  // Behind the Scenes tab's Iceberg/DuckDB nodes show. Snapshots are
+  // compared by sequence number, not snapshot-id: ids are 64-bit and lose
+  // precision as JavaScript numbers.
+  _watchIceberg() {
+    const base = process.env.ICEBERG_REST_URL;
+    if (!base) return;
+    const lastSeq = new Map();
+    const totalRows = new Map();
+    setInterval(async () => {
+      await Promise.all(LAKE_TABLES.map(async (table) => {
+        try {
+          const resp = await fetch(`${base}/v1/namespaces/fleet/tables/${table}`);
+          if (!resp.ok) return;
+          const { metadata } = await resp.json();
+          const seq = metadata['last-sequence-number'];
+          const snapshot = metadata.snapshots?.find((s) => s['sequence-number'] === seq);
+          if (!snapshot) return;
+          totalRows.set(table, Number(snapshot.summary?.['total-records'] ?? 0));
+          const previous = lastSeq.get(table);
+          lastSeq.set(table, seq);
+          // First sighting is just the baseline, not a commit seen live.
+          if (previous === undefined || previous === seq) return;
+          const added = Number(snapshot.summary?.['added-records'] ?? 0);
+          this._pushPulseHop('tableflow', 'serve-tableflow', `Iceberg commit · ${table} +${added} rows`);
+          this._pushPulseHop('snowflake', 'tableflow-snowflake', `queryable in DuckDB · lake.fleet.${table}`);
+        } catch {
+          // catalog not up yet, or briefly unreachable - try again next tick
+        }
+      }));
+      // 'snowflake' is a gauge (rows queryable now), not a hop counter.
+      this.pipelineStats.snowflake = [...totalRows.values()].reduce((a, b) => a + b, 0);
+    }, 5000);
   }
 
   async _startConsumer() {

@@ -11,6 +11,10 @@
 -- down, recommendations pause and catch up once it's back, rather than
 -- being skipped.
 
+-- The OpenAI provider jar is kept off the cluster-wide classpath (see
+-- local/flink/Dockerfile) and loaded for this job only.
+ADD JAR '/opt/flink/opt/flink-model-openai-2.2.1.jar';
+
 CREATE MODEL fleet_ai_advisor
 INPUT (prompt STRING)
 OUTPUT (recommendation STRING)

@@ -74,7 +74,7 @@ for job in "$SQL_DIR"/*.sql; do
   echo "$name: submitting $(basename "$job")"
   export PIPELINE="$name"
   envsubst '${PIPELINE}' < "$SQL_DIR/00-tables.sql" > "/tmp/$name-init.sql"
-  envsubst '${PIPELINE} ${LLM_BASE_URL} ${LLM_MODEL}' < "$job" > "/tmp/$name.sql"
+  envsubst '${PIPELINE} ${LLM_BASE_URL} ${LLM_MODEL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY}' < "$job" > "/tmp/$name.sql"
   /opt/flink/bin/sql-client.sh -i "/tmp/$name-init.sql" -f "/tmp/$name.sql"
 done
 

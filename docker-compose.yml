@@ -6,11 +6,15 @@
 #   ollama pull qwen2.5:3b
 #
 # Any other OpenAI-compatible server works too - set LLM_BASE_URL and
-# LLM_MODEL. (The Iceberg lakehouse is added in a later phase - see
-# PLAN-local-docker.md.)
+# LLM_MODEL.
+#
+# Flink also copies the derived topics into Apache Iceberg tables (RustFS
+# object store + Iceberg REST catalog), queryable with DuckDB.
 #
 #   docker compose up --build        # then open http://localhost:8787 (or $APP_PORT)
 #                                    # Flink UI: http://localhost:8081
+#                                    # object store console: http://localhost:9001
+#   docker compose run --rm duckdb   # SQL shell on the Iceberg tables
 #   docker compose down -v           # stop and delete all data
 
 name: fleet
@@ -30,6 +34,11 @@ x-topics: &topics
     ai.safety.recommendations:1
     ai.delivery.recommendations:1
 
+# Object store credentials - a local demo, so fixed and in the clear.
+x-s3: &s3
+  S3_ACCESS_KEY: fleet
+  S3_SECRET_KEY: fleet-secret
+
 x-flink: &flink
   build: local/flink
   image: fleet-flink:2.2.1
@@ -38,6 +47,7 @@ x-flink: &flink
   environment:
     LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
     LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+    <<: *s3
     FLINK_PROPERTIES: |
       jobmanager.rpc.address: flink-jobmanager
       rest.address: flink-jobmanager
@@ -95,6 +105,68 @@ services:
         done
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
 
+  # S3-compatible object store holding the Iceberg tables' data and
+  # metadata files.
+  objectstore:
+    image: rustfs/rustfs:1.0.1
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console (login: fleet / fleet-secret)
+    environment:
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_ACCESS_KEY: fleet
+      RUSTFS_SECRET_KEY: fleet-secret
+    volumes:
+      - objectstore-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/health > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: creates the `warehouse` bucket (an S3 PUT, signed with curl's
+  # built-in SigV4 support). 409 = it already exists.
+  objectstore-init:
+    image: curlimages/curl:8.22.0
+    depends_on:
+      objectstore: { condition: service_healthy }
+    environment: *s3
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        code=$$(curl -s -o /dev/null -w '%{http_code}' -X PUT http://objectstore:9000/warehouse \
+          --aws-sigv4 "aws:amz:us-east-1:s3" --user "$$S3_ACCESS_KEY:$$S3_SECRET_KEY")
+        echo "create bucket warehouse: HTTP $$code"
+        [ "$$code" = 200 ] || [ "$$code" = 409 ]
+
+  # Iceberg REST catalog: tracks each table's current metadata file. The
+  # reference implementation from the Iceberg project, backed by SQLite on a
+  # volume. Writes table metadata to the object store itself.
+  iceberg-rest:
+    image: apache/iceberg-rest-fixture:1.10.1
+    depends_on:
+      objectstore-init: { condition: service_completed_successfully }
+    ports:
+      - "8181:8181"
+    environment:
+      CATALOG_WAREHOUSE: s3://warehouse/
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://objectstore:9000
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+      CATALOG_S3_ACCESS__KEY__ID: fleet
+      CATALOG_S3_SECRET__ACCESS__KEY: fleet-secret
+      CATALOG_CLIENT_REGION: us-east-1
+      AWS_REGION: us-east-1
+    volumes:
+      - iceberg-catalog:/tmp   # the image keeps its SQLite catalog in /tmp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8181/v1/config > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   flink-jobmanager:
     <<: *flink
     command: jobmanager
@@ -120,6 +192,7 @@ services:
     command: submit-jobs.sh
     depends_on:
       kafka-init: { condition: service_completed_successfully }
+      iceberg-rest: { condition: service_healthy }
       flink-taskmanager: { condition: service_started }
 
   seed:
@@ -139,9 +212,20 @@ services:
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}   # shown in the console; Flink does the calling
+      ICEBERG_REST_URL: http://iceberg-rest:8181   # Behind the Scenes tab watches Iceberg commits
       # AUTO_TELEMETRY: "false"   # stop the continuous simulator
     restart: unless-stopped
+
+  # SQL shell on the Iceberg tables; not started by `up`.
+  #   docker compose run --rm duckdb
+  duckdb:
+    build: local/duckdb
+    profiles: [tools]
+    depends_on:
+      iceberg-rest: { condition: service_healthy }
 
 volumes:
   kafka-data:
   flink-data:
+  objectstore-data:
+  iceberg-catalog:

@@ -372,7 +372,7 @@
     <!-- BEHIND THE SCENES -->
     <div class="view" id="view-behindscenes">
       <h1 class="pagehead">Behind the Scenes</h1>
-      <p class="sub">Every box below is real and built — nothing here is a mock-up. Watch a real Kafka record travel from a vehicle simulator through Confluent Cloud, Flink, and OpenAI, then fan out to three independent, real consumers of the same governed data: this console, an RTCE-connected agent (Claude/Copilot), and Tableflow's Iceberg materialization into Snowflake.</p>
+      <p class="sub">Every box below is real and built — nothing here is a mock-up. Watch a real Kafka record travel from a vehicle simulator through Kafka, Flink, and a local LLM, then fan out to three independent, real consumers of the same data: this console, an MCP-connected agent, and the Apache Iceberg tables Flink commits every checkpoint, queryable from DuckDB.</p>
 
       <div class="bts-wrap">
         <aside class="bts-sidebar">
@@ -381,9 +381,9 @@
             <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--steel)"></span>External source</div>
             <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--blue)"></span>Kafka topic</div>
             <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--amber)"></span>Flink SQL</div>
-            <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--green)"></span>Serve / Tableflow</div>
+            <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--green)"></span>Serve / Iceberg</div>
             <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--purple)"></span>Agent (RTCE)</div>
-            <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--red-dim)"></span>Snowflake</div>
+            <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--red-dim)"></span>DuckDB</div>
           </section>
           <section>
             <h3>Cumulative hops</h3>
@@ -392,8 +392,8 @@
             <div class="bts-stat-row"><span>Flink · AI advisor</span><span class="v" id="bts-stat-flinkAi">0</span></div>
             <div class="bts-stat-row"><span>Served to App</span><span class="v" id="bts-stat-app">0</span></div>
             <div class="bts-stat-row"><span>Agent (RTCE) queries</span><span class="v" id="bts-stat-agent">0</span></div>
-            <div class="bts-stat-row"><span>Tableflow → Iceberg</span><span class="v" id="bts-stat-tableflow">0</span></div>
-            <div class="bts-stat-row"><span>Snowflake-queryable</span><span class="v" id="bts-stat-snowflake">0</span></div>
+            <div class="bts-stat-row"><span>Iceberg commits</span><span class="v" id="bts-stat-tableflow">0</span></div>
+            <div class="bts-stat-row"><span>Rows queryable in DuckDB</span><span class="v" id="bts-stat-snowflake">0</span></div>
           </section>
           <section id="bts-offline-note" style="display:none;">
             <h3>Note</h3>
@@ -1234,8 +1234,8 @@ const BTS_NODES = {
   serve:         { x:670,  y:115, w:110, h:90, kind:'serve',     label:'Serve',              sub:'fleet-context-engine\nKafka consumer' },
   app:           { x:830,  y:15,  w:150, h:70, kind:'app',       label:'App',                sub:'this console' },
   agent:         { x:830,  y:115, w:150, h:70, kind:'agent',     label:'Agent',              sub:'RTCE · MCP\n(Claude, Copilot)' },
-  tableflow:     { x:830,  y:215, w:150, h:70, kind:'tableflow', label:'Tableflow',          sub:'Iceberg · Confluent\nmanaged storage' },
-  snowflake:     { x:1020, y:215, w:150, h:70, kind:'snowflake', label:'Snowflake',          sub:'query layer ·\nbroad analytics' },
+  tableflow:     { x:830,  y:215, w:150, h:70, kind:'tableflow', label:'Iceberg',            sub:'Flink sink · RustFS\nobject store' },
+  snowflake:     { x:1020, y:215, w:150, h:70, kind:'snowflake', label:'DuckDB',             sub:'query engine ·\nanalytics' },
 };
 const BTS_KIND_COLOR = { source:'steel', kafka:'blue', flink:'amber', serve:'green', app:'blue', agent:'purple', tableflow:'green', snowflake:'red-dim' };
 
