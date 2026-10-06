@@ -1,6 +1,13 @@
 # Local fleet telemetry demo: Apache Kafka, Apache Flink, and the
-# fleet-context-engine app. (The local LLM and the Iceberg lakehouse are
-# added in later phases - see PLAN-local-docker.md.)
+# fleet-context-engine app, with AI recommendations from a local LLM served
+# by Ollama on the host (not in a container, so it can use the Mac's GPU):
+#
+#   brew install ollama && brew services start ollama
+#   ollama pull qwen2.5:3b
+#
+# Any other OpenAI-compatible server works too - set LLM_BASE_URL and
+# LLM_MODEL. (The Iceberg lakehouse is added in a later phase - see
+# PLAN-local-docker.md.)
 #
 #   docker compose up --build        # then open http://localhost:8787 (or $APP_PORT)
 #                                    # Flink UI: http://localhost:8081
@@ -26,7 +33,11 @@ x-topics: &topics
 x-flink: &flink
   build: local/flink
   image: fleet-flink:2.2.1
+  extra_hosts:
+    - "host.docker.internal:host-gateway"   # Docker Desktop provides this; Linux needs it
   environment:
+    LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+    LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
     FLINK_PROPERTIES: |
       jobmanager.rpc.address: flink-jobmanager
       rest.address: flink-jobmanager
@@ -39,6 +50,7 @@ x-flink: &flink
   volumes:
     - flink-data:/flink-data
     - ./local/flink/sql:/opt/flink/sql:ro
+    - ./local/flink/submit-jobs.sh:/opt/flink/bin/submit-jobs.sh:ro
 
 services:
   kafka:
@@ -126,6 +138,7 @@ services:
       - "${APP_PORT:-8787}:8787"   # APP_PORT=... if 8787 is taken on the host
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}   # shown in the console; Flink does the calling
       # AUTO_TELEMETRY: "false"   # stop the continuous simulator
     restart: unless-stopped
 

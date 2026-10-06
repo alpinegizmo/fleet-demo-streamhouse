@@ -229,7 +229,7 @@
           <div id="map"></div>
         </div>
         <div class="feedcard">
-          <h3>AI Advisor output <span style="font-size:10px;color:var(--steel);font-weight:400;">OpenAI · <span id="fresh-advisor"></span></span></h3>
+          <h3>AI Advisor output <span style="font-size:10px;color:var(--steel);font-weight:400;"><span class="llm-model">local LLM</span> · <span id="fresh-advisor"></span></span></h3>
           <div class="feed" id="feed-overview"></div>
         </div>
       </div>
@@ -349,7 +349,7 @@
     <!-- LIVE PIPELINE -->
     <div class="view" id="view-live">
       <h1 class="pagehead">Live Pipeline</h1>
-      <p class="sub">Raw diagnostics for the same pipeline every dashboard in this console now reads from — connection state, pipeline mode/source, and the unfiltered recommendation stream across all three domains (<b>fleet-context-engine</b>'s HTTP API, backed by the real Confluent Cloud + Flink + OpenAI pipeline built in <code>terraform/</code>).</p>
+      <p class="sub">Raw diagnostics for the same pipeline every dashboard in this console now reads from — connection state, pipeline mode/source, and the unfiltered recommendation stream across all three domains (<b>fleet-context-engine</b>'s HTTP API, backed by the real local Kafka + Flink + LLM pipeline in <code>docker-compose.yml</code>).</p>
 
       <div id="live-status" class="feedcard" style="height:auto;flex-direction:row;align-items:center;gap:10px;margin-bottom:14px;">
         <span class="dot" id="live-dot" style="background:var(--steel);animation:none;"></span>
@@ -360,7 +360,7 @@
         <div class="card"><div class="lbl">Vehicles reporting</div><div class="val" id="live-vehicles">—</div><div class="delta" id="live-source">—</div></div>
         <div class="card"><div class="lbl">Avg engine temp</div><div class="val" id="live-temp">—</div></div>
         <div class="card"><div class="lbl">High risk (safety+maint)</div><div class="val" id="live-risk">—</div><div class="delta warn">threshold: risk &gt; 70</div></div>
-        <div class="card"><div class="lbl">Open AI recommendations</div><div class="val" id="live-recs">—</div><div class="delta" id="live-recs-delta">real OpenAI output</div></div>
+        <div class="card"><div class="lbl">Open AI recommendations</div><div class="val" id="live-recs">—</div><div class="delta" id="live-recs-delta">real <span class="llm-model">local LLM</span> output</div></div>
       </div>
 
       <div class="feedcard" style="height:auto;">
@@ -917,6 +917,7 @@ async function poll(){
       liveFetch('/api/driver-risk-events-anomaly?limit=15'),
       liveFetch('/api/risk-comparison'),
     ]);
+    if (summary.llmModel) document.querySelectorAll('.llm-model').forEach((el)=>{ el.textContent = summary.llmModel; });
     setLiveStatus(true, (summary.source==='local-kafka' ? 'LOCAL — real Kafka + Flink pipeline' : 'Connected — fleet-context-engine SIMULATED fallback (KAFKA_BOOTSTRAP not set)') + (summary.consumerCaughtUp===false ? ' · consumer still catching up…' : ''));
 
     renderOverview(summary, vehicles, weatherList, trafficIncidents, recsAll);
@@ -939,7 +940,7 @@ setInterval(poll, 3000);
    observed from real API responses. Stage 2 (Flink derived) is observed via
    the new /api/maintenance-alerts endpoint, correlated by vehicleId + a
    receivedAt >= the injection's own timestamp. Stage 3 (AI reasoning) has no
-   independent signal - there's no separate Kafka message for "OpenAI was
+   independent signal - there's no separate Kafka message for "the model was
    called" - so it's shown as an inferred in-progress state between stages 2
    and 4, not something actually observed. */
 let activeTrace = null; // { vehicleId, injectedAt, stage, stageTimes: {1,2,3,4}, hideTimer }
@@ -1056,9 +1057,9 @@ document.getElementById('liveSpeedAnomalyBtn').addEventListener('click', async (
 document.getElementById('liveResetBtn').addEventListener('click', async ()=>{
   if (!liveConnected){ alert('Not connected to fleet-context-engine — see SETUP.md to enable LIVE mode.'); return; }
   const ok = confirm(
-    'This PERMANENTLY deletes all real data in the 10 Confluent Cloud topics — ' +
-    'every seeded telemetry record and every real OpenAI recommendation generated so far. ' +
-    'This cannot be undone.\n\nThe topics, their schemas, and the 6 Flink jobs are NOT touched — ' +
+    'This PERMANENTLY deletes all real data in the 11 Kafka topics — ' +
+    'every seeded telemetry record and every real AI recommendation generated so far. ' +
+    'This cannot be undone.\n\nThe topics and the Flink jobs are NOT touched — ' +
     'only the messages inside them.\n\nContinue?'
   );
   if (!ok) return;
@@ -1229,7 +1230,7 @@ const BTS_NODES = {
   source:        { x:10,   y:115, w:120, h:90, kind:'source',    label:'Sources',           sub:'vehicle / weather /\ntraffic / parcel sims', static:true },
   kafka:         { x:165,  y:115, w:120, h:90, kind:'kafka',     label:'Kafka',              sub:'10 topics\nraw + business + AI' },
   flinkBusiness: { x:320,  y:115, w:140, h:90, kind:'flink',     label:'Flink · Business',  sub:'maintenance / driver-risk /\ndelivery derivation' },
-  flinkAi:       { x:495,  y:115, w:140, h:90, kind:'flink',     label:'Flink · AI Advisor',sub:'ML_PREDICT → OpenAI' },
+  flinkAi:       { x:495,  y:115, w:140, h:90, kind:'flink',     label:'Flink · AI Advisor',sub:'ML_PREDICT → local LLM' },
   serve:         { x:670,  y:115, w:110, h:90, kind:'serve',     label:'Serve',              sub:'fleet-context-engine\nKafka consumer' },
   app:           { x:830,  y:15,  w:150, h:70, kind:'app',       label:'App',                sub:'this console' },
   agent:         { x:830,  y:115, w:150, h:70, kind:'agent',     label:'Agent',              sub:'RTCE · MCP\n(Claude, Copilot)' },

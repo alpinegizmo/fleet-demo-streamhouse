@@ -9,15 +9,29 @@
 # reprocessing every topic from the beginning.
 #
 # After editing a job's SQL, replace the running copy:
-#   docker compose run --rm flink-sql-init submit-jobs.sh --replace
-# That cancels the running job (its state, e.g. OVER-window history, is
+#   docker compose run --rm flink-sql-init submit-jobs.sh --replace [name...]
+# e.g. `--replace ai` for 20-ai.sql only (no names = every job). That
+# cancels the running job (its state, e.g. OVER-window history, is
 # dropped) and submits the new version, which resumes from the last
 # checkpoint's offsets.
 
 set -euo pipefail
 
 REPLACE=false
-[[ "${1:-}" == "--replace" ]] && REPLACE=true
+REPLACE_ONLY=()   # short names (business, ai, ...); empty = all jobs
+if [[ "${1:-}" == "--replace" ]]; then
+  REPLACE=true
+  shift
+  REPLACE_ONLY=("$@")
+fi
+
+should_replace() {
+  $REPLACE || return 1
+  [[ ${#REPLACE_ONLY[@]} -eq 0 ]] && return 0
+  local n
+  for n in "${REPLACE_ONLY[@]}"; do [[ "fleet-$n" == "$1" ]] && return 0; done
+  return 1
+}
 
 SQL_DIR=/opt/flink/sql
 REST="http://${FLINK_JOBMANAGER:-flink-jobmanager}:8081"
@@ -49,7 +63,7 @@ for job in "$SQL_DIR"/*.sql; do
   name="fleet-$(basename "$job" .sql | sed 's/^[0-9]*-//')"
 
   if running_jobs | grep -qx "$name"; then
-    if $REPLACE; then
+    if should_replace "$name"; then
       cancel_job "$name"
     else
       echo "$name: already running, skipping (use --replace to resubmit)"
@@ -60,7 +74,7 @@ for job in "$SQL_DIR"/*.sql; do
   echo "$name: submitting $(basename "$job")"
   export PIPELINE="$name"
   envsubst '${PIPELINE}' < "$SQL_DIR/00-tables.sql" > "/tmp/$name-init.sql"
-  envsubst '${PIPELINE}' < "$job" > "/tmp/$name.sql"
+  envsubst '${PIPELINE} ${LLM_BASE_URL} ${LLM_MODEL}' < "$job" > "/tmp/$name.sql"
   /opt/flink/bin/sql-client.sh -i "/tmp/$name-init.sql" -f "/tmp/$name.sql"
 done
 

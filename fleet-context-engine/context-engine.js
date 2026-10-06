@@ -73,7 +73,7 @@ function severityToRisk(severity) {
 // Behind the Scenes tab). Each hop below is a (node, edge) pair in that tab's
 // diagram - a topic arrival fires every hop in its list, in order, so the
 // animation can show the real journey: raw telemetry -> Kafka -> Flink
-// business rules -> Flink+OpenAI -> the served in-memory model -> its three
+// business rules -> Flink+LLM -> the served in-memory model -> its three
 // real consumers (this console, RTCE agents, and Tableflow -> Snowflake).
 // Business-topic arrivals only render the first hop (Kafka -> Flink) since
 // their onward journey to serve/app isn't separately observable until the AI
@@ -433,6 +433,7 @@ class LiveContextEngine {
       routesDisruptedCount: list.filter((v) => v.performanceStatus === 'behind_schedule').length + this.trafficIncidents.length,
       generatedAt: new Date().toISOString(),
       source: 'local-kafka',
+      llmModel: process.env.LLM_MODEL || null,
       consumerCaughtUp: this.ready,
     };
   }
@@ -556,7 +557,7 @@ class LiveContextEngine {
 
   // Demo control: produces a REAL record to vehicle.telemetry
   // with a spiked engine temperature, so the real Flink pipeline derives a
-  // real maintenance alert and the real OpenAI model generates a real
+  // real maintenance alert and the real local LLM generates a real
   // recommendation - the live-data equivalent of the "Inject engine spike"
   // button in the HTML console. Reflects back into this process's own
   // in-memory state once its own consumer reads the message back.
@@ -590,7 +591,7 @@ class LiveContextEngine {
       geozone_ids: [geozone],
     };
     await produceRecord('vehicle.telemetry', record);
-    return { id, geozone, injected: 'engine_spike', note: 'Real record produced to vehicle.telemetry - the real Flink pipeline will derive a maintenance alert and OpenAI recommendation within its normal processing latency (usually well under a minute).' };
+    return { id, geozone, injected: 'engine_spike', note: 'Real record produced to vehicle.telemetry - the real Flink pipeline will derive a maintenance alert and AI recommendation within a few seconds.' };
   }
 
   // Demo control: produces a REAL high-severity traffic incident record.
@@ -653,7 +654,7 @@ class LiveContextEngine {
   // kafka-client.js's purgeAllTopics - deletes records, not topics, so the
   // running Flink jobs are untouched) and clears this process's own in-memory view. This is
   // destructive and irreversible - the real seeded data and every
-  // real OpenAI recommendation generated so far are actually deleted.
+  // real AI recommendation generated so far are actually deleted.
   async resetPipeline() {
     const result = await purgeAllTopics();
     this.vehicles.clear();

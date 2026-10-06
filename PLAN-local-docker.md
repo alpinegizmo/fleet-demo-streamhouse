@@ -12,8 +12,8 @@ local OpenAI-compatible model, all started by one `docker compose up`.
 | Encoding / governance | **Plain JSON, no schema registry.** Flink `'format' = 'json'`. The schema contract lives in the Flink DDL plus one JS schema file for MCP `getMetadata`. |
 | Flink | Apache Flink **2.2** (the newest line with matching Kafka connector `5.0.0-2.2`, `iceberg-flink-runtime-2.2:1.12.0`, `flink-model-openai:2.2.x`). |
 | AI in the stream | Flink-native `CREATE MODEL ... WITH ('provider'='openai')` + `ML_PREDICT`, pointed at the local model. |
-| LLM runtime | **Docker Model Runner** (host-side, Metal GPU), wired in via compose's top-level `models:` element. |
-| Model | `ai/qwen2.5:1.5B-F16` (~3 GB). Configurable; chat agent model separately overridable. |
+| LLM runtime | **Ollama, installed natively on the host** (Metal GPU), reached from containers at `host.docker.internal:11434`. Originally Docker Model Runner, but its llama.cpp process got `Operation not permitted` opening model files on this machine (Phase 3). |
+| Model | `qwen2.5:3b` (Q4, ~1.9 GB): ~0.1 s per one-sentence call warm. Started on `qwen2.5:1.5b`, but on harsh-braking safety events it answered "Reduce speed…" 20/20 times; 3b gives on-topic advice (braking training/coaching) at nearly the same speed. `LLM_MODEL` / `LLM_BASE_URL` switch to any model or OpenAI-compatible server. |
 | Tableflow replacement | Flink → **Iceberg** (REST catalog + S3-compatible object store) → **DuckDB**. |
 | RTCE replacement | **Own MCP server** inside `fleet-context-engine` (`/mcp`, Streamable HTTP), same `listTopics` / `getMetadata` / `queryData` tools. |
 | AI_DETECT_ANOMALIES replacement | Per-vehicle **z-score** with a Flink SQL OVER window, same output topic shape. |
@@ -51,21 +51,11 @@ Compose services:
 | `flink-sql-init` | same Flink image | one-shot: `envsubst` the SQL templates (model URL/name), then `sql-client.sh -f` each statement set; skips any job whose `pipeline.name` is already RUNNING (idempotent re-runs) |
 | `iceberg-rest` | `apache/iceberg-rest-fixture` (JDBC/SQLite on a volume) | Iceberg REST catalog |
 | `objectstore` + `objectstore-init` | MinIO pinned, or SeaweedFS (see risks) | S3 warehouse bucket |
-| `fleet-app` | repo `Dockerfile` | `fleet-context-engine` + console + MCP; `models: [llm]` |
+| `fleet-app` | repo `Dockerfile` | `fleet-context-engine` + console + MCP; `LLM_MODEL` / `LLM_BASE_URL` env |
 | `seed` | repo `Dockerfile`, `node seed.js` | one-shot backfill (profile `seed`, or run automatically once) |
 | `duckdb` | small image w/ DuckDB CLI + iceberg/httpfs ext | profile `tools`: `docker compose run --rm duckdb` |
 
-Compose model binding:
-```yaml
-models:
-  llm:
-    model: ${LLM_MODEL:-ai/qwen2.5:1.5B-F16}
-    context_size: 4096
-services:
-  fleet-app:      { models: { llm: { endpoint_var: LLM_URL, model_var: LLM_MODEL } } }
-  flink-sql-init: { models: { llm: { endpoint_var: LLM_URL, model_var: LLM_MODEL } } }
-```
-`LLM_URL` resolves to Model Runner's OpenAI-compatible base (`.../engines/v1`); everything appends `/chat/completions`. An `OPENAI_BASE_URL` override lets anyone point at Ollama / LM Studio / llama.cpp instead.
+LLM wiring: Ollama runs on the host (`brew install ollama && brew services start ollama && ollama pull qwen2.5:3b`). Compose passes `LLM_BASE_URL` (default `http://host.docker.internal:11434/v1`) and `LLM_MODEL` to Flink, and the model name to the app for display.
 
 ## Flink SQL (replaces `terraform/flink_statements.tf`)
 
@@ -115,7 +105,7 @@ Relabel only, no structural change: "OpenAI" → model name from `/api/health`; 
 0. **Pre-flight — tear down the cloud stack first.** `terraform/terraform.tfstate` still tracks **38 live resources** (Standard cluster, 10-CFU Flink pool, Tableflow). Deleting the directory would orphan them and keep billing. Run `terraform destroy` there (Tableflow resources have `prevent_destroy = true`, which must be removed first) — *or* tell me to keep them and I'll leave `terraform/` out of the deletion. Work on a branch `local-docker`.
 1. **Kafka + app.** Compose with `kafka`, `kafka-init`, `fleet-app`, `seed`; Node on plain JSON. ✔ Console shows vehicles moving from real Kafka topics; inject buttons produce.
 2. **Flink core.** Flink image, `00-tables.sql`, `10-business.sql`, `flink-sql-init`. ✔ Derived + anomaly topics populate; Flink UI on `:8081` shows jobs RUNNING; Safety/Delivery/Maintenance tabs fill.
-3. **Local LLM.** *Start with a 30-min spike:* `flink-model-openai` against Model Runner (jar dependencies, endpoint path, dummy api-key, response parsing). Then `20-ai.sql`. ✔ `ai.*` topics fill; measure per-request latency and topic lag under the simulator's load (see risks).
+3. **Local LLM.** ✅ Done. `flink-model-openai` 2.2.1 (one 30 MB shaded jar) works against Ollama's OpenAI-compatible API; `20-ai.sql` runs the 3 `ML_PREDICT` jobs async; inject → recommendation in ~1 s.
 4. **Lakehouse.** Object store, `iceberg-rest`, `30-lakehouse.sql`, `duckdb` tool. ✔ `SELECT count(*) FROM lake.fleet.ai_safety_recommendations` in DuckDB grows every ~30 s.
 5. **MCP + Ask.** `query-store.js`, `mcp-server.js`, agent rewire. ✔ Claude Code via `.vscode/mcp.json` lists/queries topics; chat widget answers with real values.
 6. **Console relabel + docs + deletions**, `Makefile` (`up`, `down`, `reset` = `down -v`, `sql` = Flink SQL client shell, `duckdb`), new diagram/screenshot.
@@ -127,7 +117,7 @@ Relabel only, no structural change: "OpenAI" → model name from `/api/health`; 
 - **`flink-model-openai` packaging** — may not be a fat jar (OpenAI Java SDK deps). Phase 3 spike resolves it; fallback is a small Flink async UDF.
 - **Iceberg on Flink needing Hadoop classes** even with a REST catalog + S3FileIO — known friction; add `hadoop-client-api/runtime` jars to the image if so.
 - **Object store choice.** MinIO's community edition stopped publishing maintained images in late 2025; pin the last image or use SeaweedFS's S3 gateway. Decided during Phase 4.
-- **Docker Model Runner requirement.** Needs Docker Desktop (or Docker Engine with the model plugin) with Model Runner enabled; won't work on Colima/OrbStack. `OPENAI_BASE_URL` override is the escape hatch.
+- **Ollama on the host.** The AI job and `/api/ask` need Ollama running (`brew services start ollama`). If it stops, the AI job keeps retrying and catches up when it returns (tested: 45 s outage, no recommendations lost). Ollama in a container would make the stack self-contained, but on a Mac that means CPU only.
 - **No Flink HA.** A jobmanager restart loses running jobs; `flink-sql-init` resubmits on `up`, and Kafka group offsets + Iceberg checkpoints make that resume cleanly rather than reprocess.
 - **Footprint.** ~6–8 GB Docker memory (Kafka ~1 GB, Flink ~3 GB, catalog/object store/app ~1 GB) plus ~3 GB host RAM for the model.
 - **Schema drift.** With no registry, a producer can emit a field the DDL doesn't know about and Flink silently ignores it (or drops the record with `ignore-parse-errors`). Keep `topic-schemas.js` and the DDL in one PR whenever a shape changes.
