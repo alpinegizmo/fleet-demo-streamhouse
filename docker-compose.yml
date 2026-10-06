@@ -1,0 +1,87 @@
+# Local fleet telemetry demo: Apache Kafka + the fleet-context-engine app.
+# (Flink, the local LLM and the Iceberg lakehouse are added in later phases -
+# see PLAN-local-docker.md.)
+#
+#   docker compose up --build        # then open http://localhost:8787 (or $APP_PORT)
+#   docker compose down -v           # stop and delete all data
+
+name: fleet
+
+x-topics: &topics
+  # topic:partitions - must match ALL_TOPICS in fleet-context-engine/kafka-client.js
+  TOPICS: >-
+    vehicle.telemetry:3
+    weather.conditions:1
+    traffic.incidents:1
+    parcel.volume:1
+    maintenance.alerts:1
+    driver.risk.events:1
+    driver.risk.events.anomaly:1
+    delivery.performance.events:1
+    ai.maintenance.recommendations:1
+    ai.safety.recommendations:1
+    ai.delivery.recommendations:1
+
+services:
+  kafka:
+    image: apache/kafka:4.3.1
+    ports:
+      - "9094:9094"   # host access: KAFKA_BOOTSTRAP=localhost:9094
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  kafka-init:
+    image: apache/kafka:4.3.1
+    depends_on:
+      kafka: { condition: service_healthy }
+    environment: *topics
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        for spec in $$TOPICS; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists \
+            --topic "$${spec%%:*}" --partitions "$${spec##*:}" --replication-factor 1
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+
+  seed:
+    build: .
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    command: ["node", "seed.js"]
+
+  fleet-app:
+    build: .
+    depends_on:
+      seed: { condition: service_completed_successfully }
+    ports:
+      - "${APP_PORT:-8787}:8787"   # APP_PORT=... if 8787 is taken on the host
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      # AUTO_TELEMETRY: "false"   # stop the continuous simulator
+    restart: unless-stopped
+
+volumes:
+  kafka-data:

@@ -2,21 +2,18 @@
 //
 // Backend process for the fleet telemetry demo: runs the
 // fleet context engine (context-engine.js) and exposes its state as a
-// small HTTP API for fleet-intelligence-console.html to poll. RTCE
-// (Confluent Cloud's own managed MCP server, see terraform/rtce.tf) is the
-// only MCP path into this project's data - this process has no MCP
-// surface of its own.
+// small HTTP API for fleet-intelligence-console.html to poll.
 //
-// context-engine.js automatically uses the REAL Confluent Cloud + Flink +
-// OpenAI pipeline if the required environment variables are set (see
-// SETUP.md - get them with `terraform output` from the terraform/
-// directory), and falls back to an in-memory simulator otherwise.
+// context-engine.js reads the REAL local Kafka + Flink pipeline when
+// KAFKA_BOOTSTRAP is set (docker-compose.yml sets it), and falls back to an
+// in-memory simulator otherwise.
 //
 // Run it:
-//   npm install
-//   npm start
+//   docker compose up            # whole stack, from the repo root
+//   npm install && npm start     # this process only (SIMULATED, or set
+//                                # KAFKA_BOOTSTRAP=localhost:9094)
 
-// Must be the first import: context-engine.js reads its LIVE_ENV vars at
+// Must be the first import: context-engine.js reads KAFKA_BOOTSTRAP at
 // module-load time (isLiveModeConfigured() runs immediately), so .env has
 // to be loaded into process.env before that import below runs. A real
 // `export`ed shell env var always wins over .env (dotenv default), so this
@@ -27,7 +24,7 @@ import { isLive } from './context-engine.js';
 import { startHttpServer } from './http-server.js';
 import { startTelemetrySimulator } from './telemetry-simulator.js';
 
-console.error(`[fleet-context-engine] mode: ${isLive ? 'LIVE (real Confluent Cloud + Flink + OpenAI)' : 'SIMULATED (in-memory, no Confluent Cloud env vars found)'}`);
+console.error(`[fleet-context-engine] mode: ${isLive ? `LOCAL (real Kafka at ${process.env.KAFKA_BOOTSTRAP})` : 'SIMULATED (in-memory, KAFKA_BOOTSTRAP not set)'}`);
 
 startHttpServer();
 

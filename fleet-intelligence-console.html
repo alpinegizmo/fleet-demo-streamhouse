@@ -916,7 +916,7 @@ async function poll(){
       liveFetch('/api/driver-risk-events-anomaly?limit=15'),
       liveFetch('/api/risk-comparison'),
     ]);
-    setLiveStatus(true, (summary.source==='live-confluent-cloud' ? 'LIVE — real Confluent Cloud + Flink + OpenAI' : 'Connected — fleet-context-engine SIMULATED fallback (no Confluent Cloud env vars set)') + (summary.consumerCaughtUp===false ? ' · consumer still catching up…' : ''));
+    setLiveStatus(true, (summary.source==='local-kafka' ? 'LOCAL — real Kafka + Flink pipeline' : 'Connected — fleet-context-engine SIMULATED fallback (KAFKA_BOOTSTRAP not set)') + (summary.consumerCaughtUp===false ? ' · consumer still catching up…' : ''));
 
     renderOverview(summary, vehicles, weatherList, trafficIncidents, recsAll);
     renderSafety(summary, vehicles, recsSafety, riskHeuristic, riskAnomaly, riskComparison);

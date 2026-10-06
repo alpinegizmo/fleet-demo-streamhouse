@@ -1,9 +1,9 @@
 // context-engine.js
 //
-// Reads the REAL fleet state from Confluent Cloud + Flink + OpenAI (the
-// pipeline in terraform/), instead of simulating it in memory.
+// Reads the REAL fleet state from the local Kafka + Flink + LLM pipeline
+// (docker-compose.yml), instead of simulating it in memory.
 //
-// A background Kafka consumer (kafkajs) tails all 10 real topics from the
+// A background Kafka consumer (kafkajs) tails all 11 real topics from the
 // beginning and continuously rebuilds the same in-memory shape the
 // original simulator used (vehicles Map, weather Map, rolling logs, etc.),
 // so every public method here is a synchronous, instant read from memory -
@@ -13,19 +13,14 @@
 // submission, 10-60+s depending on pool load) - tailing Kafka directly in
 // the background is the right way to serve a real-time read model.
 //
-// The raw/context topics are 'value.format' = 'json-registry' (see
-// terraform/flink_statements.tf), so each message's value is
-// Confluent-wire-framed (1-byte magic + 4-byte schema ID + JSON payload) -
-// decodeValue() below just strips that header, since we don't need the
-// schema for reading (only for producing, in confluent-client.js).
+// Every topic carries plain JSON (no schema registry), so each message
+// value is parsed directly.
 //
-// If the required environment variables aren't set (see SETUP.md - get
-// them with `terraform output` from the terraform/ directory), this
-// module falls back to the original in-memory simulator so the MCP server
-// still works out of the box without any Confluent Cloud setup.
+// If KAFKA_BOOTSTRAP isn't set, this module falls back to the original
+// in-memory simulator so the console still works with a plain `npm start`
+// and no Kafka at all.
 
-import { Kafka, logLevel } from 'kafkajs';
-import { produceRecord, purgeAllTopics } from './confluent-client.js';
+import { ALL_TOPICS, getKafka, produceRecord, purgeAllTopics } from './kafka-client.js';
 
 const GEOZONES = [
   'tullamarine-linehaul',
@@ -49,19 +44,12 @@ const GEOZONE_COORDS = {
   'dandenong-south': [-37.9930, 145.2150],
 };
 
-const LIVE_ENV = [
-  'KAFKA_BOOTSTRAP_ENDPOINT', 'KAFKA_API_KEY', 'KAFKA_API_SECRET',
-  'KAFKA_REST_ENDPOINT', 'KAFKA_CLUSTER_ID',
-  'SCHEMA_REGISTRY_ENDPOINT', 'SCHEMA_REGISTRY_API_KEY', 'SCHEMA_REGISTRY_API_SECRET',
-];
-
 export function isLiveModeConfigured() {
-  return LIVE_ENV.every((k) => process.env[k]);
+  return Boolean(process.env.KAFKA_BOOTSTRAP);
 }
 
 function decodeValue(buffer) {
-  // byte 0 = magic (0x00), bytes 1-4 = big-endian schema ID, rest = JSON payload
-  return JSON.parse(buffer.subarray(5).toString('utf8'));
+  return JSON.parse(buffer.toString('utf8'));
 }
 
 // How close in time (via receivedAt) a heuristic overspeed event and an AI
@@ -152,17 +140,7 @@ class LiveContextEngine {
     this._pipelineSeq = 0;
     this.pipelineStats = { kafka: 0, flinkBusiness: 0, flinkAi: 0, serve: 0, app: 0, agent: 0, tableflow: 0, snowflake: 0 };
 
-    const brokerHost = process.env.KAFKA_BOOTSTRAP_ENDPOINT.replace(/^SASL_SSL:\/\//, '');
-    this.kafka = new Kafka({
-      clientId: 'fleet-context-engine',
-      brokers: [brokerHost],
-      ssl: true,
-      sasl: { mechanism: 'plain', username: process.env.KAFKA_API_KEY, password: process.env.KAFKA_API_SECRET },
-      connectionTimeout: 10000,
-      requestTimeout: 30000,
-      retry: { retries: 8, initialRetryTime: 1000, maxRetryTime: 10000 },
-      logLevel: logLevel.WARN,
-    });
+    this.kafka = getKafka();
 
     this._consuming = this._startConsumer();
   }
@@ -171,20 +149,7 @@ class LiveContextEngine {
     const admin = this.kafka.admin();
     await admin.connect();
 
-    const topics = [
-      'vehicle.telemetry', 'weather.conditions', 'traffic.incidents', 'parcel.volume',
-      'maintenance.alerts', 'driver.risk.events', 'delivery.performance.events',
-      'ai.maintenance.recommendations', 'ai.safety.recommendations', 'ai.delivery.recommendations',
-    ];
-    // driver.risk.events.anomaly (the AI_DETECT_ANOMALIES experiment) only
-    // exists on the terraform-us-west-2* stacks, not the original
-    // ap-southeast-2 stack - subscribing to a topic the target cluster
-    // doesn't have would break this consumer for every other topic too, so
-    // only add it once confirmed present.
-    const existingTopics = await admin.listTopics();
-    if (existingTopics.includes('driver.risk.events.anomaly')) {
-      topics.push('driver.risk.events.anomaly');
-    }
+    const topics = ALL_TOPICS;
 
     const consumer = this.kafka.consumer({ groupId: `fleet-context-engine-${Date.now()}` });
     await consumer.connect();
@@ -192,7 +157,7 @@ class LiveContextEngine {
 
     // Behind the Scenes tab: this consumer always replays every topic from
     // offset 0 on every process start (fresh random groupId above, so every
-    // Cloud Run cold start/redeploy re-reads full history) - great for
+    // container restart re-reads full history) - great for
     // instantly rebuilding the in-memory model the other tabs read, but
     // without this, that same full-history replay would also fire a
     // pipeline-event pulse per historical message, making the Behind the
@@ -216,10 +181,10 @@ class LiveContextEngine {
         try {
           record = decodeValue(message.value);
         } catch {
-          return; // skip anything that isn't wire-framed JSON we can decode
+          return; // skip anything that isn't valid JSON
         }
         // Real basis for the "events/sec" KPI: every message consumed,
-        // across all 10 topics, timestamped and trimmed to a 10s window.
+        // across all 11 topics, timestamped and trimmed to a 10s window.
         const now = Date.now();
         this._recentMsgTimestamps.push(now);
         this._recentMsgTimestamps = this._recentMsgTimestamps.filter((t) => now - t < 10000);
@@ -467,7 +432,7 @@ class LiveContextEngine {
         : null,
       routesDisruptedCount: list.filter((v) => v.performanceStatus === 'behind_schedule').length + this.trafficIncidents.length,
       generatedAt: new Date().toISOString(),
-      source: 'live-confluent-cloud',
+      source: 'local-kafka',
       consumerCaughtUp: this.ready,
     };
   }
@@ -589,7 +554,7 @@ class LiveContextEngine {
     };
   }
 
-  // Demo control: produces a REAL wire-encoded record to vehicle.telemetry
+  // Demo control: produces a REAL record to vehicle.telemetry
   // with a spiked engine temperature, so the real Flink pipeline derives a
   // real maintenance alert and the real OpenAI model generates a real
   // recommendation - the live-data equivalent of the "Inject engine spike"
@@ -684,10 +649,9 @@ class LiveContextEngine {
     return { id, geozone, speedKmh: spikeSpeed, injected: 'speed_anomaly', note: 'Real record produced to vehicle.telemetry with speed far outside baseline. The heuristic will flag it immediately (OVERSPEED); AI_DETECT_ANOMALIES needs a checkpoint to commit before it shows up in driver.risk.events.anomaly, usually well under a minute but can occasionally take longer.' };
   }
 
-  // Demo control: HARD reset. Purges all 10 real topics (see
-  // confluent-client.js's purgeAllTopics for how - retention-based, not
-  // drop/recreate, so the topics' schemas and the 6 persistent Flink jobs
-  // are untouched) and clears this process's own in-memory view. This is
+  // Demo control: HARD reset. Purges all 11 real topics (see
+  // kafka-client.js's purgeAllTopics - deletes records, not topics, so the
+  // running Flink jobs are untouched) and clears this process's own in-memory view. This is
   // destructive and irreversible - the real seeded data and every
   // real OpenAI recommendation generated so far are actually deleted.
   async resetPipeline() {
@@ -701,12 +665,12 @@ class LiveContextEngine {
     this.driverRiskAnomalyEvents = [];
     this.deliveryPerformanceEvents = [];
     this._recentMsgTimestamps = [];
-    return { ...result, note: 'Real topics purged and in-memory state cleared. The 6 Flink jobs and OpenAI connection were not touched - new data will flow through normally.' };
+    return { ...result, note: 'Real topics purged and in-memory state cleared. The Flink jobs were not touched - new data will flow through normally.' };
   }
 }
 
-// --- fallback: original in-memory simulator, used only when Confluent
-// Cloud environment variables aren't configured, so the server still runs
+// --- fallback: original in-memory simulator, used only when KAFKA_BOOTSTRAP
+// isn't configured, so the server still runs
 // out of the box without any setup. ---
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }

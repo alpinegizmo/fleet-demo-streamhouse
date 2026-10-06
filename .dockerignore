@@ -10,10 +10,11 @@ fleet-context-engine/.rtce-credentials
 fleet-context-engine/.env
 fleet-context-engine/SETUP.md
 fleet-context-engine/SETUP-RTCE-COPILOT.md
-seed-data
 docs
 screenshots
-terraform
+terraform*
+local
+confluent-fleet-eda
 README.md
 setup-demo.md
 confluent-fleet-eda.skill

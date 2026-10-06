@@ -109,7 +109,7 @@ export function startHttpServer(port = process.env.PORT || process.env.HTTP_PORT
         return;
       }
       if (req.method === 'GET' && url.pathname === '/api/health') {
-        return sendJson(res, 200, { ok: true, mode: isLive ? 'live' : 'simulated' });
+        return sendJson(res, 200, { ok: true, mode: isLive ? 'local' : 'simulated' });
       }
       if (req.method === 'GET' && url.pathname === '/api/fleet-summary') {
         return sendJson(res, 200, await contextEngine.getFleetSummary());
@@ -185,7 +185,7 @@ export function startHttpServer(port = process.env.PORT || process.env.HTTP_PORT
       }
       if (req.method === 'POST' && url.pathname === '/api/reset') {
         if (!isLive) {
-          return sendJson(res, 400, { error: 'Not in LIVE mode - nothing to reset. See SETUP.md to enable LIVE mode.' });
+          return sendJson(res, 400, { error: 'Not connected to Kafka (SIMULATED mode) - nothing to reset. Set KAFKA_BOOTSTRAP or run via docker compose.' });
         }
         return sendJson(res, 200, await contextEngine.resetPipeline());
       }

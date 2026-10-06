@@ -1,23 +1,22 @@
 // telemetry-simulator.js
 //
-// Keeps the real Confluent Cloud pipeline continuously fed with fresh,
-// realistic telemetry, instead of leaving it as a one-shot 485-record
-// batch (see seed-data/generate_seed_data.py's --produce mode). Without
+// Keeps the real Kafka pipeline continuously fed with fresh, realistic
+// telemetry, instead of leaving it as the one-shot 485-record seed batch
+// (see seed.js). Without
 // this, the Flink jobs' watermarks stop advancing a few seconds after
 // startup and the console has nothing new to show between demo-button
 // clicks.
 //
-// Produces REAL wire-encoded records via confluent-client.js's
-// produceRecord() - same mechanism the HTTP API's /api/inject-incident
-// endpoint uses - so every number downstream (Flink-derived events, OpenAI
-// recommendations) is genuinely computed from these, not faked in this
-// process's memory.
+// Produces REAL records via kafka-client.js's produceRecord() - same
+// mechanism the HTTP API's /api/inject-incident endpoint uses - so every
+// number downstream (Flink-derived events, AI recommendations) is genuinely
+// computed from these, not faked in this process's memory.
 //
 // Vehicle positions stay anchored near their geozone's real coordinate
 // (same 6 anchors the console plots on the map) so the map shows coherent
 // local drift instead of vehicles teleporting across the whole metro area.
 
-import { produceRecord } from './confluent-client.js';
+import { produceRecord, produceRecords } from './kafka-client.js';
 
 const GEOZONE_COORDS = {
   'melbourne-cbd': [-37.8136, 144.9631],
@@ -139,20 +138,16 @@ export function startTelemetrySimulator() {
 
   const vehicles = Array.from({ length: 12 }, (_, i) => makeVehicleState(i));
 
-  // Moves every vehicle each tick (concurrently, not sequentially awaited -
-  // 12 sequential produce calls could take longer than the 3s interval
-  // itself and cause ticks to stack up). Previously only 1-2 of the 12
+  // Moves every vehicle each tick, as one batched produce call. Previously
+  // only 1-2 of the 12
   // vehicles moved per tick, so any given marker sat frozen on the map for
   // ~25s on average between updates - moving all of them every tick is what
   // actually makes movement visible, not a bigger step size.
   setInterval(async () => {
-    const results = await Promise.allSettled(vehicles.map((v) => {
-      step(v);
-      return produceRecord('vehicle.telemetry', telemetryRecord(v));
-    }));
-    const failed = results.filter((r) => r.status === 'rejected');
-    if (failed.length) {
-      console.error(`[fleet-telemetry-simulator] vehicle.telemetry produce failed for ${failed.length}/${results.length} vehicles:`, failed[0].reason?.message);
+    try {
+      await produceRecords('vehicle.telemetry', vehicles.map((v) => { step(v); return telemetryRecord(v); }));
+    } catch (err) {
+      console.error('[fleet-telemetry-simulator] vehicle.telemetry produce failed:', err.message);
     }
   }, 3000);
 
