@@ -2,27 +2,20 @@
 //
 // A small JSON API over the context engine, so the browser-based HTML
 // console (fleet-intelligence-console.html) can show real pipeline data
-// too. Browsers can't safely hold Confluent Cloud credentials or speak the
-// Kafka wire protocol directly, so this process is the proxy - the browser
-// only ever talks to this HTTP server over plain JSON.
+// too. Browsers can't speak the Kafka wire protocol directly, so this
+// process is the proxy - the browser only ever talks to this HTTP server
+// over plain JSON.
 //
-// This process has no MCP server of its own (Confluent's own managed RTCE
-// is the only MCP surface in this project - see terraform/rtce.tf). The
-// one exception is /api/ask below, which makes this process an MCP
-// *client* of RTCE (via rtce-client.js/nl-query-agent.js) so the console
-// can ask natural-language questions answered by real SQL against the live
-// topics - a second, independent read path from the Kafka consumer that
-// powers every other endpoint here.
+// The same server hosts the MCP endpoint (/mcp, see mcp-server.js) that
+// gives agents SQL over the live topics, and /api/ask, the console chat
+// widget's agent, which uses those same tools in-process
+// (nl-query-agent.js).
 //
 // This process also serves the console's static files (HTML + fonts, both
 // one directory up - see STATIC_ROOT below) so the whole demo is a single
-// origin. That matters for two deployments of this same file tree:
-//   - local dev: `open fleet-intelligence-console.html` as a file:// still
-//     works unchanged (see the LIVE_API fallback in that file) and never
-//     hits this static serving path at all.
-//   - Cloud Run (or anywhere else): the container runs only this process,
-//     nothing serves the HTML separately, so the console must come from
-//     here too.
+// origin. `open fleet-intelligence-console.html` as a file:// still works
+// too (see the LIVE_API fallback in that file) and never hits this static
+// serving path at all.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -30,6 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { contextEngine, isLive } from './context-engine.js';
 import { askAboutFleetData } from './nl-query-agent.js';
+import { handleMcpRequest } from './mcp-server.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // fleet-intelligence-console.html and fonts/ live one level up from this
@@ -44,7 +38,7 @@ const MIME_TYPES = {
 
 // Serves fleet-intelligence-console.html at "/" and font files under
 // fonts/, and nothing else - STATIC_ROOT is the repo root, which also
-// contains .rtce-credentials, terraform/ state, etc., so this must be an
+// contains .env files and the rest of the repo, so this must be an
 // allowlist rather than "anything under STATIC_ROOT" or those would be
 // servable too. Returns false (falls through to the API routes / 404) if
 // there's nothing to serve, rather than answering wrong requests itself.
@@ -107,6 +101,9 @@ export function startHttpServer(port = process.env.PORT || process.env.HTTP_PORT
     try {
       if (req.method === 'GET' && !url.pathname.startsWith('/api/') && serveStatic(req, res, url.pathname)) {
         return;
+      }
+      if (url.pathname === '/mcp') {
+        return await handleMcpRequest(req, res, await readJsonBody(req));
       }
       if (req.method === 'GET' && url.pathname === '/api/health') {
         return sendJson(res, 200, { ok: true, mode: isLive ? 'local' : 'simulated' });
@@ -175,8 +172,6 @@ export function startHttpServer(port = process.env.PORT || process.env.HTTP_PORT
         if (!Array.isArray(conversation) || !conversation.length) {
           return sendJson(res, 400, { error: 'Missing "conversation" array in request body.' });
         }
-        const lastUser = [...conversation].reverse().find((m) => m.role === 'user');
-        contextEngine.recordAgentQuery(lastUser?.content || '');
         return sendJson(res, 200, await askAboutFleetData(conversation));
       }
       if (req.method === 'GET' && url.pathname === '/api/pipeline-events') {

@@ -208,10 +208,14 @@ services:
     depends_on:
       seed: { condition: service_completed_successfully }
     ports:
-      - "${APP_PORT:-8787}:8787"   # APP_PORT=... if 8787 is taken on the host
+      - "${APP_PORT:-8787}:8787"   # console, API, and MCP at /mcp; APP_PORT=... if 8787 is taken
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
-      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}   # shown in the console; Flink does the calling
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}   # for the /api/ask chat agent
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}   # also shown in the console
+      # CHAT_MODEL: qwen2.5:7b   # a different model for the chat agent only
       ICEBERG_REST_URL: http://iceberg-rest:8181   # Behind the Scenes tab watches Iceberg commits
       # AUTO_TELEMETRY: "false"   # stop the continuous simulator
     restart: unless-stopped

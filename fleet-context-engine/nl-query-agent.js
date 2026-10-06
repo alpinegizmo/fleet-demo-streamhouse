@@ -1,79 +1,55 @@
 // nl-query-agent.js
 //
-// Answers a natural-language question about the fleet by giving OpenAI
-// tool-calling access to RTCE's own three tools (rtce-client.js) - the same
-// listTopics/getMetadata/queryData surface an MCP client like Claude Code
-// would call, just driven by our own backend's model instead of an MCP
-// client. Every answer is grounded in a real queryData SQL call against the
-// live topics; nothing here is cached or precomputed.
+// Answers a natural-language question about the fleet (the console's "Ask
+// the live data" chat widget, POST /api/ask) by giving a local LLM
+// tool-calling access to the same three tools the MCP server exposes
+// (mcp-server.js) - listTopics, getMetadata, queryData. Every answer is
+// grounded in a real SQL query over the live topics; nothing is cached or
+// precomputed.
 //
-// Configured via OPENAI_API_KEY (same account as the Flink OpenAI
-// connection, but this call happens in this Node process, not in Flink -
-// see terraform/flink.tf for the other one). Optional OPENAI_NL_MODEL
-// overrides the model (defaults to gpt-4o-mini).
+// Talks to any OpenAI-compatible chat completions API: LLM_BASE_URL
+// (default: Ollama on the host) and CHAT_MODEL, falling back to LLM_MODEL -
+// the same model Flink uses for recommendations unless overridden.
 
-import { listTopics, getMetadata, queryData } from './rtce-client.js';
+import * as z from 'zod';
+import { FLEET_TOOLS } from './mcp-server.js';
+import { TOPICS, describeColumns } from './topic-schemas.js';
+import { tableAlias } from './query-store.js';
 
-const TOOLS = [
-  {
-    type: 'function',
-    function: {
-      name: 'listTopics',
-      description: 'Returns the list of available topics (tables) in the real-time data store. Call this first if you don\'t already know the topic names.',
-      parameters: { type: 'object', properties: {}, additionalProperties: false },
-    },
+const TOOLS = Object.entries(FLEET_TOOLS).map(([name, tool]) => ({
+  type: 'function',
+  function: {
+    name,
+    description: tool.description,
+    parameters: z.toJSONSchema(z.object(tool.inputSchema)),
   },
-  {
-    type: 'function',
-    function: {
-      name: 'getMetadata',
-      description: 'Returns the schema for a topic - column names, types, and nested structure. Call this before queryData on any topic you have not already inspected - never guess column names.',
-      parameters: {
-        type: 'object',
-        properties: { topic_name: { type: 'string', description: 'the name of the topic to get metadata for' } },
-        required: ['topic_name'],
-        additionalProperties: false,
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'queryData',
-      description: 'Run a real SQL SELECT query against a topic in the live Kafka pipeline. Requires calling getMetadata first. The query MUST include a FROM clause naming the exact topic in double quotes, e.g. FROM "vehicle.telemetry" - omitting FROM fails validation. Supports SELECT/WHERE/ORDER BY/LIMIT with standard predicates (=, <>, <, >, BETWEEN, IN, LIKE, IS NULL, AND/OR/NOT). Does NOT support JOINs, aggregate functions (AVG/SUM/COUNT/MIN/MAX), GROUP BY, or subqueries - if the question needs one of those, pull the raw rows you can and compute it yourself, and say so in your answer.',
-      parameters: {
-        type: 'object',
-        properties: {
-          topic_name: { type: 'string', description: 'the name of the topic to query' },
-          query: { type: 'string', description: 'SQL SELECT query string; must include FROM "<topic_name>" (double-quoted, exact name); double-quote column names too, using the exact casing returned by getMetadata' },
-          max_result_rows: { type: 'integer', description: 'maximum rows to return (max 200)' },
-        },
-        required: ['topic_name', 'query', 'max_result_rows'],
-        additionalProperties: false,
-      },
-    },
-  },
-];
+}));
 
-const TOOL_IMPLS = {
-  listTopics: () => listTopics(),
-  getMetadata: ({ topic_name }) => getMetadata(topic_name),
-  queryData: ({ topic_name, query, max_result_rows }) => queryData(topic_name, query, max_result_rows),
-};
+// Small models make fewer, better tool calls when the tables and columns
+// are already in front of them, so the system prompt carries the whole
+// catalog; getMetadata/listTopics remain available but are rarely needed.
+function catalog() {
+  return Object.entries(TOPICS).map(([topic, { description, schema }]) => {
+    const cols = Object.entries(describeColumns({ ...schema, kafka_timestamp: 'TIMESTAMPTZ' }))
+      .map(([name, type]) => `${name} ${type}`).join(', ');
+    return `- ${tableAlias(topic)} (topic ${topic}): ${description}\n  columns: ${cols}`;
+  }).join('\n');
+}
 
-const SYSTEM_PROMPT = `You are a chat assistant answering questions about a live fleet-telemetry Kafka pipeline (vehicle telemetry, weather, traffic incidents, parcel volumes, and AI-generated safety/delivery/maintenance recommendations) by querying Confluent's Real-Time Context Engine directly - a read-only SQL interface over the real, currently-flowing Kafka topics. There is no cached or batch copy of this data; every answer must come from an actual queryData call you just made.
+const SYSTEM_PROMPT = `You answer questions about a live fleet of delivery vehicles in Melbourne by querying its real-time data with the queryData tool. The data is the current state of a Kafka/Flink pipeline - raw vehicle telemetry, weather, traffic, parcel loads, Flink-derived business events, and AI-generated recommendations - not a cached or batch copy. Every answer must come from a query you just ran.
 
-Always call listTopics first if you don't already know the topic names, then getMetadata on a topic before querying it. queryData only supports SELECT/WHERE/ORDER BY/LIMIT (no JOINs, aggregates, GROUP BY, or subqueries) - if the question needs one of those, pull the raw rows and compute the aggregate yourself, and say so.
+Tables (DuckDB SQL; nested STRUCT fields use dot notation, e.g. "position".speed; double-quote columns named position, type, timestamp, condition, datetime):
+${catalog()}
 
-This is a chat UI, not a report generator. Hard rules for every answer, no exceptions:
-- 1-3 short sentences, plain conversational prose only.
-- No markdown: no **bold**, no headers, no numbered or bulleted lists, no colons introducing a list.
-- Never cover more than one topic/domain per answer. If a question is broad ("what's going on", "give me an overview"), pick the single most notable real thing you find (e.g. one vehicle, one alert, one incident) and answer about that specifically - do not survey multiple topics in one reply.
-- Cite the actual values returned (vehicle IDs, numbers, timestamps). Do not fabricate data. If a query comes back empty, say so plainly rather than guessing.`;
+Each table holds recent records only (up to 2,000 per topic), and each record is one event, so a vehicle appears many times - use the latest row per vehicle (e.g. arg_max(col, kafka_timestamp)) when asked about current state. Joins, GROUP BY and aggregates all work. If a query fails, read the error, fix the SQL, and try again.
+
+This is a chat UI. Answer in 1-3 short sentences of plain prose: no markdown, no lists. Cite the actual values you found (vehicle IDs, numbers, times). If a query returns nothing, say so plainly; never invent data.`;
 
 export async function askAboutFleetData(conversation, { maxSteps = 6 } = {}) {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error('Missing OPENAI_API_KEY environment variable. See SETUP.md.');
+  const baseUrl = process.env.LLM_BASE_URL;
+  const model = process.env.CHAT_MODEL || process.env.LLM_MODEL;
+  if (!baseUrl || !model) {
+    throw new Error('Set LLM_BASE_URL and LLM_MODEL (or CHAT_MODEL) to use /api/ask - see docker-compose.yml.');
   }
   if (!Array.isArray(conversation) || !conversation.length) {
     throw new Error('askAboutFleetData requires a non-empty conversation array.');
@@ -81,45 +57,45 @@ export async function askAboutFleetData(conversation, { maxSteps = 6 } = {}) {
 
   // Cap how much prior chat history gets resent each turn, so a long demo
   // session doesn't grow the request unbounded.
-  const recentConversation = conversation.slice(-12);
-
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    ...recentConversation,
-  ];
+  const messages = [{ role: 'system', content: SYSTEM_PROMPT }, ...conversation.slice(-12)];
   const trace = [];
+  let nudged = false;
 
   for (let step = 0; step < maxSteps; step++) {
-    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    // max_tokens and the timeout matter beyond this one request: the Flink
+    // AI job shares the same model server, and a runaway generation (small
+    // models occasionally loop) queues its ML_PREDICT calls behind it.
+    const resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_NL_MODEL || 'gpt-4o-mini',
-        messages,
-        tools: TOOLS,
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, tools: TOOLS, temperature: 0.2, max_tokens: 400 }),
+      signal: AbortSignal.timeout(60000),
     });
-    if (!resp.ok) throw new Error(`OpenAI request failed: ${resp.status} ${await resp.text()}`);
-    const data = await resp.json();
-    const msg = data.choices[0].message;
+    if (!resp.ok) throw new Error(`LLM request failed: ${resp.status} ${await resp.text()}`);
+    const msg = (await resp.json()).choices[0].message;
     messages.push(msg);
 
-    if (!msg.tool_calls || !msg.tool_calls.length) {
+    if (!msg.tool_calls?.length) {
+      // Small models sometimes answer a failed query with "let me fix that
+      // and try again" - and then stop. Hold them to it, once.
+      if (trace.at(-1)?.result?.error && !nudged) {
+        nudged = true;
+        messages.push({ role: 'user', content: 'Run the corrected query now with the queryData tool, then answer.' });
+        continue;
+      }
       return { answer: msg.content, trace };
     }
 
     for (const call of msg.tool_calls) {
-      const args = JSON.parse(call.function.arguments || '{}');
       let result;
       try {
-        result = await TOOL_IMPLS[call.function.name](args);
+        const tool = FLEET_TOOLS[call.function.name];
+        if (!tool) throw new Error(`Unknown tool ${call.function.name}`);
+        result = await tool.run(JSON.parse(call.function.arguments || '{}'));
       } catch (err) {
         result = { error: err.message };
       }
-      trace.push({ tool: call.function.name, arguments: args, result });
+      trace.push({ tool: call.function.name, arguments: call.function.arguments, result });
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) });
     }
   }

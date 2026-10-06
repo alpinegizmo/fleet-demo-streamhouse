@@ -21,6 +21,7 @@
 // and no Kafka at all.
 
 import { ALL_TOPICS, getKafka, produceRecord, purgeAllTopics } from './kafka-client.js';
+import { remember } from './query-store.js';
 
 const GEOZONES = [
   'tullamarine-linehaul',
@@ -234,6 +235,7 @@ class LiveContextEngine {
         this._recentMsgTimestamps.push(now);
         this._recentMsgTimestamps = this._recentMsgTimestamps.filter((t) => now - t < 10000);
         this._applyRecord(topic, record);
+        remember(topic, record, message.timestamp); // for SQL via MCP - see query-store.js
 
         const target = pulseCatchupTarget.get(`${topic}:${partition}`) ?? 0;
         if (Number(message.offset) >= target) this._recordPipelinePulse(topic, record);
@@ -407,13 +409,14 @@ class LiveContextEngine {
   }
 
   // Real, on-demand signal for the Behind the Scenes tab's "Agent" node -
-  // fired whenever a real MCP client (this console's own chat widget, or an
-  // external Claude/Copilot session) asks RTCE a question via /api/ask. Unlike
-  // the continuous Kafka-driven hops above, this is a genuine on-demand pull,
-  // not a streaming consumer, so it only pulses when actually queried.
-  recordAgentQuery(question) {
-    const text = (question || '').slice(0, 60);
-    this._pushPulseHop('agent', 'serve-agent', `RTCE query · "${text}${(question || '').length > 60 ? '…' : ''}"`);
+  // fired for every SQL query an agent runs through the queryData tool,
+  // whether from an external MCP client (Claude, Copilot) or this console's
+  // own chat widget (see mcp-server.js). Unlike the continuous Kafka-driven
+  // hops above, this is a genuine on-demand pull, so it only pulses when
+  // actually queried.
+  recordAgentQuery(sql) {
+    const text = (sql || '').replace(/\s+/g, ' ').trim();
+    this._pushPulseHop('agent', 'serve-agent', `MCP query · ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`);
   }
 
   async getPipelineEvents(sinceId = 0) {
