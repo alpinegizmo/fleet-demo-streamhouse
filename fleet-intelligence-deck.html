@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Fleet Intelligence, in Real Time — Confluent × OpenAI</title>
+<title>Fleet Intelligence, in Real Time</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
   :root{
@@ -270,7 +270,7 @@
   <!-- 1. TITLE -->
   <section class="slide" id="s0">
     <div class="brandmark">P</div>
-    <div class="eyebrow">Confluent Cloud · Apache Flink · OpenAI</div>
+    <div class="eyebrow">Apache Kafka · Apache Flink · Apache Iceberg · a local LLM</div>
     <h1 class="big">Fleet Intelligence,<br>in Real Time</h1>
     <p class="lede">From raw vehicle telemetry to an AI-generated recommendation — before the truck is back at depot.</p>
     <div class="kicker">Fleet Telemetry Demo</div>
@@ -311,21 +311,20 @@
     <p class="lede" style="margin-top:30px;max-width:640px;">And because each business domain reads the same stream independently — safety, delivery, and maintenance don't wait on each other, or on a shared database, to react.</p>
   </section>
 
-  <!-- 4. WHY CONFLUENT -->
+  <!-- 4. BUILDING BLOCKS -->
   <section class="slide" id="s3">
-    <div class="eyebrow">Why Confluent</div>
+    <div class="eyebrow">The building blocks</div>
     <h2 class="slide-title">One durable log.<br>Every team builds on it independently.</h2>
     <div class="cols">
       <ul class="points">
-        <li><div class="bar" style="background:var(--tel);"></div><div><b>Managed Kafka</b><span class="sub">The durable event log every downstream system reads from — no producer coupled to any one consumer.</span></div></li>
-        <li><div class="bar" style="background:var(--maint);"></div><div><b>Schema Registry</b><span class="sub">Every topic's shape is enforced and versioned, so producers and consumers evolve independently without breaking each other.</span></div></li>
-        <li><div class="bar" style="background:var(--delivery);"></div><div><b>Flink SQL</b><span class="sub">Stream processing written as SQL — not a bespoke consumer application per team, per language.</span></div></li>
-        <li><div class="bar" style="background:var(--ai);"></div><div><b>Native AI Model calls</b><span class="sub">OpenAI invoked directly from a Flink SQL statement — no separate inference service to build, deploy, or scale.</span></div></li>
+        <li><div class="bar" style="background:var(--tel);"></div><div><b>Apache Kafka</b><span class="sub">The durable event log every downstream system reads from — no producer coupled to any one consumer.</span></div></li>
+        <li><div class="bar" style="background:var(--maint);"></div><div><b>Flink SQL</b><span class="sub">Stream processing written as SQL — not a bespoke consumer application per team, per language. The table definitions double as the schema contract.</span></div></li>
+        <li><div class="bar" style="background:var(--ai);"></div><div><b>Model calls inside the stream</b><span class="sub"><code style="font-family:var(--mono);">ML_PREDICT</code> calls a local model (Ollama, OpenAI-compatible) from a Flink SQL statement — no separate inference service to build, deploy, or scale.</span></div></li>
+        <li><div class="bar" style="background:var(--delivery);"></div><div><b>Apache Iceberg</b><span class="sub">Flink also commits the derived streams as open tables, so analytics engines (DuckDB here) query the same data without a separate pipeline.</span></div></li>
       </ul>
-      <div class="callout">Confluent isn't just where the data lands — it's where the business logic <span class="mark">and</span> the AI inference actually run.</div>
+      <div class="callout">The stream processor isn't just where data lands — it's where the business logic <span class="mark">and</span> the AI inference actually run.</div>
     </div>
   </section>
-
   <!-- 5. SOLUTION THESIS -->
   <section class="slide" id="s4">
     <div class="eyebrow">The solution</div>
@@ -334,9 +333,9 @@
       Raw vehicle telemetry — plus weather, traffic, and parcel-volume context — feeds a continuous
       Flink SQL pipeline that derives three independent business events: <b style="color:var(--safety)">safety</b>,
       <b style="color:var(--delivery)">delivery</b>, and <b style="color:var(--maint)">maintenance</b>. Each event is
-      handed to an OpenAI model for a genuinely generated recommendation, published back to
-      Kafka as its own topic — readable by a dashboard, a downstream system, or an MCP client
-      (Claude Code/Desktop, VS Code Copilot), identically.
+      handed to a local LLM, from inside the Flink job, for a generated recommendation, published back to
+      Kafka as its own topic — readable by a dashboard, by an agent over MCP (Claude Code, VS Code Copilot),
+      or as an Iceberg table from DuckDB. All of it runs on a laptop.
     </p>
   </section>
 
@@ -360,24 +359,25 @@
         <div class="pcol-head" style="color:var(--maint);">Business · derived by Flink</div>
         <div class="chip" style="--dot:var(--maint);">maintenance.alerts</div>
         <div class="chip" style="--dot:var(--safety);">driver.risk.events</div>
+        <div class="chip" style="--dot:var(--safety);">driver.risk.events.anomaly</div>
         <div class="chip" style="--dot:var(--delivery);">delivery.performance.events</div>
       </div>
       <div class="parrow">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 12h14M13 6l6 6-6 6"/></svg>
-        <div class="alabel">Flink + OpenAI<br>ML_PREDICT</div>
+        <div class="alabel">Flink<br>+ LLM</div>
       </div>
       <div class="pcol">
-        <div class="pcol-head" style="color:var(--ai);">AI · OpenAI-generated</div>
+        <div class="pcol-head" style="color:var(--ai);">AI · generated in-stream</div>
         <div class="chip" style="--dot:var(--ai);">ai.maintenance.recommendations</div>
         <div class="chip" style="--dot:var(--ai);">ai.safety.recommendations</div>
         <div class="chip" style="--dot:var(--ai);">ai.delivery.recommendations</div>
       </div>
     </div>
     <div class="pipeline-foot">
-      <div><b>10</b> topics</div>
-      <div><b>6</b> continuous Flink SQL jobs</div>
-      <div><b>1</b> shared OpenAI model</div>
-      <div>Model: <b>Claude Haiku 4.5</b> via cross-region inference profile</div>
+      <div><b>11</b> topics</div>
+      <div><b>3</b> continuous Flink SQL jobs</div>
+      <div><b>7</b> Iceberg tables</div>
+      <div>Model: <b>qwen2.5:3b</b> on Ollama, ~0.1 s per recommendation</div>
     </div>
   </section>
 
@@ -386,11 +386,11 @@
     <div class="eyebrow">The demo</div>
     <h2 class="slide-title">What you'll see</h2>
     <ol class="steps">
-      <li><div class="step-body"><b>Open the Fleet Intelligence Console</b><span>12 simulated vehicles on a real Melbourne metro map, three business dashboards, live business-impact KPIs — running instantly, zero setup.</span></div></li>
-      <li><div class="step-body"><b>Inject an engine spike</b><span>Watch Safety, Delivery, and Maintenance react independently, on screen, in real time — including today's impacted-deliveries and at-risk-revenue counters.</span></div></li>
-      <li><div class="step-body"><b>Switch to the Live Pipeline tab</b><span>Same console, now reading real data through the actual Confluent + Flink + OpenAI backend.</span></div></li>
-      <li><div class="step-body"><b>Ask your MCP client (Option 1: Claude Code/Desktop, Option 2: VS Code Copilot) to show the latest vehicle.telemetry records</b><span>Same real topic the dashboard reads — connected via Confluent's native Real-Time Context Engine (RTCE), the only MCP path into this project's data.</span></div></li>
-      <li><div class="step-body"><b>Trigger a real incident, from the console</b><span>A genuine OpenAI-generated recommendation lands end to end — usually in under a minute.</span></div></li>
+      <li><div class="step-body"><b>Open the Fleet Intelligence Console</b><span>12 vehicles on a real Melbourne metro map, three business dashboards, live business-impact KPIs — every number read from the real pipeline.</span></div></li>
+      <li><div class="step-body"><b>Inject an engine spike</b><span>A real record goes into Kafka; Flink derives a maintenance alert and the local model's recommendation is on screen about a second later.</span></div></li>
+      <li><div class="step-body"><b>Open Behind the Scenes</b><span>The pipeline animated from real events: topic arrivals, Flink jobs, Iceberg commits, agent queries.</span></div></li>
+      <li><div class="step-body"><b>Ask the live data</b><span>From the console's chat, or Claude Code / VS Code Copilot over MCP — the agent answers by running SQL over the same live topics the dashboard reads.</span></div></li>
+      <li><div class="step-body"><b>Query the lakehouse</b><span><code style="font-family:var(--mono);">make duckdb</code>: the same events and recommendations as Iceberg tables, about 30 seconds behind the stream.</span></div></li>
     </ol>
   </section>
 
@@ -401,44 +401,55 @@
     <div class="cols">
       <div class="terminal">
         <div class="tbar"><span></span><span></span><span></span></div>
-        <pre><span class="cmt"># from terraform/, load real pipeline credentials</span>
-<span class="cmd">export KAFKA_REST_ENDPOINT=$(terraform output -raw kafka_rest_endpoint)</span>
-<span class="cmt"># ...(6 more `terraform output` exports — see README)</span>
-
-<span class="cmt"># generate + produce real, wire-encoded records</span>
-<span class="cmd">cd seed-data && python3 generate_seed_data.py --produce</span>
-
-<span class="cmt"># 485 records: telemetry, weather, traffic, parcels</span>
-<span class="cmt"># written to Confluent Cloud AND out/*.jsonl</span></pre>
+        <pre><span class="cmt"># once: a local model server (uses the Mac's GPU)</span>
+<span class="cmd">brew install ollama && brew services start ollama</span>
+<span class="cmd">make model</span>      <span class="cmt"># ollama pull qwen2.5:3b</span>
+<span class="cmt"># Kafka, Flink, Iceberg, the app — all in Docker</span>
+<span class="cmd">make up</span>
+<span class="cmd">open http://localhost:8787</span></pre>
       </div>
       <div>
-        <p class="lede" style="margin-bottom:6px;">One script, two jobs: it writes realistic fleet data straight into the live topics <i>and</i> drops the same data as JSONL for an offline/backup demo path.</p>
+        <p class="lede" style="margin-bottom:6px;">Everything is open source and local: no cloud account, no API keys. A one-shot seed backfills history; a simulator keeps 12 vehicles reporting every 3 seconds.</p>
         <div class="timeline">
-          <div class="trow"><div class="t">t+0</div><div class="d"><b>Script starts</b> — wire-encoding each record to match its topic's registered schema.</div></div>
-          <div class="trow"><div class="t">~2 min</div><div class="d"><b>485 records land</b> across the 4 raw/context topics.</div></div>
-          <div class="trow"><div class="t">~2.5 min</div><div class="d"><b>Flink derives</b> real maintenance, safety, and delivery events.</div></div>
-          <div class="trow"><div class="t">~3 min</div><div class="d"><b>OpenAI recommendations</b> appear in the three <code style="font-family:var(--mono);">ai.*</code> topics.</div></div>
+          <div class="trow"><div class="t">t+0</div><div class="d"><b>make up</b> — the first run builds images, which takes a few minutes.</div></div>
+          <div class="trow"><div class="t">~40 s</div><div class="d"><b>Stack up</b>: topics created, 485 seed records produced, three Flink jobs submitted.</div></div>
+          <div class="trow"><div class="t">seconds</div><div class="d"><b>Flink derives</b> maintenance, safety, and delivery events; <b>recommendations</b> follow about a second after each.</div></div>
+          <div class="trow"><div class="t">~70 s</div><div class="d"><b>First Iceberg commit</b>, then one every 30 s — the new rows are queryable from DuckDB.</div></div>
         </div>
       </div>
     </div>
   </section>
-
-  <!-- 9. RECAP -->
+  <!-- 9. ON CONFLUENT CLOUD -->
   <section class="slide" id="s8">
+    <div class="eyebrow">Same architecture, managed</div>
+    <h2 class="slide-title">Every local piece has<br>a Confluent Cloud counterpart</h2>
+    <div class="recap">
+      <div class="row"><div class="k">Kafka</div><div class="v">Apache Kafka in Docker → <b>a managed Kafka cluster</b></div></div>
+      <div class="row"><div class="k">Schemas</div><div class="v">Plain JSON, the Flink DDL as contract → <b>Schema Registry</b>, enforced on every topic</div></div>
+      <div class="row"><div class="k">Flink</div><div class="v">A Flink cluster and SQL client → <b>Flink statements</b> on a compute pool</div></div>
+      <div class="row"><div class="k">AI</div><div class="v"><code style="font-family:var(--mono);">ML_PREDICT</code> to Ollama → <b>ML_PREDICT</b> to a hosted model</div></div>
+      <div class="row"><div class="k">Anomalies</div><div class="v">A z-score in an OVER window → <b>AI_DETECT_ANOMALIES</b></div></div>
+      <div class="row"><div class="k">Lakehouse</div><div class="v">Flink → Iceberg + REST catalog → <b>Tableflow</b>, with table maintenance handled for you</div></div>
+      <div class="row"><div class="k">Agents</div><div class="v">An MCP server in the app → <b>Real-Time Context Engine</b> (managed MCP)</div></div>
+    </div>
+  </section>
+  <!-- 10. RECAP -->
+  <section class="slide" id="s9">
     <div class="eyebrow">Recap</div>
     <h2 class="slide-title">Real streams. Real AI. Real fast.</h2>
     <div class="recap">
       <div class="row"><div class="k">Problem</div><div class="v">Fleet insight <b>lagged reality</b> — reports, not reactions.</div></div>
-      <div class="row"><div class="k">Confluent</div><div class="v">One stream, <b>three decoupled</b> business views, computed in SQL.</div></div>
-      <div class="row"><div class="k">OpenAI</div><div class="v">A genuinely <b>generated</b> recommendation — not a canned template.</div></div>
-      <div class="row"><div class="k">Result</div><div class="v">Raw signal to AI action in <b>under a minute</b>.</div></div>
+      <div class="row"><div class="k">Kafka + Flink</div><div class="v">One stream, <b>three decoupled</b> business views, computed in SQL.</div></div>
+      <div class="row"><div class="k">AI in-stream</div><div class="v">A <b>generated</b> recommendation per event, from inside the Flink job.</div></div>
+      <div class="row"><div class="k">Consumers</div><div class="v">Dashboard, <b>agents over MCP</b>, and Iceberg tables — the same data, independently.</div></div>
+      <div class="row"><div class="k">Result</div><div class="v">Raw signal to AI action in <b>about a second</b>, on a laptop.</div></div>
     </div>
-    <div class="kicker" style="margin-top:36px;">Full source + step-by-step redeploy guide → README.md</div>
+    <div class="kicker" style="margin-top:36px;">Full source and setup → README.md</div>
   </section>
 
 </div>
 
-<div class="slideno" id="slideno">01 / 09</div>
+<div class="slideno" id="slideno">01 / 10</div>
 <div class="navdots" id="navdots"></div>
 <div class="navhint"><kbd>&darr;</kbd><kbd>&uarr;</kbd> or scroll to navigate</div>
 
