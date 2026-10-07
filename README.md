@@ -96,6 +96,17 @@ AI recommendation, usually within a second or two; *Inject speed anomaly*
 shows the fixed rule and the per-vehicle baseline side by side on the
 Safety tab. *Reset real pipeline* deletes every record in every topic.
 
+**Background traffic** (sidebar) sets the simulator's pace — *Normal* (every
+vehicle reports every 3 s), *Slow* (15 s) or *Minimal* (30 s) — and every
+downstream rate drops with it, so a presenter can calm the stream down and
+let an injection stand out. Reports are staggered — one vehicle at a time,
+evenly spaced — rather than all 12 at once. At *Normal* the AI feed carries ~12
+recommendations a minute: harsh braking, overspeeding and overheating are
+rare, as they would be. There's no full pause, on purpose: the per-vehicle
+anomaly job flags a reading only once later telemetry arrives, so at
+*Minimal* an injected speed spike shows up on the Safety tab after ~10 s
+(rule-based injections still take about a second).
+
 Recommendations caused by an injection are badged **Your injection** (or
 **Injected**, if another browser tab made it), so they stand out from the
 steady background traffic. That's real lineage, not a guess: each injected
@@ -163,6 +174,7 @@ before `make up`:
 | `LLM_MODEL` | `qwen2.5:7b` | model for Flink's recommendations |
 | `LLM_BASE_URL` | `http://host.docker.internal:11434/v1` | any OpenAI-compatible API |
 | `CHAT_MODEL` | `qwen2.5:3b` | model for the chat agent |
+| `SIM_PACE` | `normal` | the simulator's starting pace (`normal`, `slow`, `minimal`); the console switch changes it at runtime |
 | `AUTO_TELEMETRY` | on | set `"false"` in `docker-compose.yml` to stop the simulator |
 
 Changing `LLM_MODEL` or `LLM_BASE_URL` recreates the Flink containers on the

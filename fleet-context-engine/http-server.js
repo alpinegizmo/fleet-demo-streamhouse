@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { contextEngine, isLive } from './context-engine.js';
 import { askAboutFleetData } from './nl-query-agent.js';
 import { handleMcpRequest } from './mcp-server.js';
+import { getSimulatorState, setSimulatorPace } from './telemetry-simulator.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // fleet-intelligence-console.html and fonts/ live one level up from this
@@ -171,6 +172,20 @@ export function startHttpServer(port = process.env.PORT || process.env.HTTP_PORT
           return sendJson(res, 400, { error: 'Missing "conversation" array in request body.' });
         }
         return sendJson(res, 200, await askAboutFleetData(conversation));
+      }
+      if (req.method === 'GET' && url.pathname === '/api/simulator') {
+        return sendJson(res, 200, getSimulatorState());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/simulator') {
+        const { pace } = await readJsonBody(req);
+        if (!getSimulatorState().enabled) {
+          return sendJson(res, 400, { error: 'The telemetry simulator is not running (SIMULATED mode, or AUTO_TELEMETRY=false).' });
+        }
+        try {
+          return sendJson(res, 200, setSimulatorPace(pace));
+        } catch (err) {
+          return sendJson(res, 400, { error: err.message });
+        }
       }
       if (req.method === 'GET' && url.pathname === '/api/pipeline-events') {
         const since = Number(url.searchParams.get('since')) || 0;

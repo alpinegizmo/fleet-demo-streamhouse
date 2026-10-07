@@ -15,8 +15,17 @@
 // Vehicle positions stay anchored near their geozone's real coordinate
 // (same 6 anchors the console plots on the map) so the map shows coherent
 // local drift instead of vehicles teleporting across the whole metro area.
+//
+// The pace is adjustable at runtime (console "Background traffic" control,
+// POST /api/simulator) so a presenter can calm the stream down: every
+// producer's interval is multiplied by the pace's factor, so all downstream
+// rates (Flink events, AI recommendations, the ticker, the map) drop in
+// proportion. There's deliberately no full pause: the per-vehicle anomaly
+// job works in event time and only emits a reading once later telemetry
+// moves the watermark past it, so an injected speed spike needs some
+// background flow to be detected.
 
-import { produceRecord, produceRecords } from './kafka-client.js';
+import { produceRecord } from './kafka-client.js';
 
 const GEOZONE_COORDS = {
   'melbourne-cbd': [-37.8136, 144.9631],
@@ -35,6 +44,28 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 // actually moving, not a random heading unrelated to its real position deltas.
 function bearingFromDelta(dLat, dLng) {
   return (Math.atan2(dLng, dLat) * 180 / Math.PI + 360) % 360;
+}
+
+export const PACES = {
+  normal: { factor: 1, description: 'every vehicle reports every 3 s' },
+  slow: { factor: 5, description: 'every vehicle reports every 15 s' },
+  minimal: { factor: 10, description: 'every vehicle reports every 30 s' },
+};
+
+let pace = PACES[process.env.SIM_PACE] ? process.env.SIM_PACE : 'normal';
+let running = false;
+let reschedule = () => {};
+
+export function getSimulatorState() {
+  return { enabled: running, pace, paces: PACES };
+}
+
+export function setSimulatorPace(next) {
+  if (!PACES[next]) throw new Error(`Unknown pace "${next}" - use one of: ${Object.keys(PACES).join(', ')}`);
+  pace = next;
+  reschedule(); // apply now, not after the current (possibly 30 s) wait
+  console.error(`[fleet-telemetry-simulator] pace -> ${pace} (${PACES[pace].description})`);
+  return getSimulatorState();
 }
 
 function makeVehicleState(i) {
@@ -150,70 +181,80 @@ export function startTelemetrySimulator() {
 
   const vehicles = Array.from({ length: 12 }, (_, i) => makeVehicleState(i));
 
-  // Moves every vehicle each tick, as one batched produce call. Previously
-  // only 1-2 of the 12
-  // vehicles moved per tick, so any given marker sat frozen on the map for
-  // ~25s on average between updates - moving all of them every tick is what
-  // actually makes movement visible, not a bigger step size.
-  setInterval(async () => {
-    try {
-      await produceRecords('vehicle.telemetry', vehicles.map((v) => { step(v); return telemetryRecord(v); }));
-    } catch (err) {
-      console.error('[fleet-telemetry-simulator] vehicle.telemetry produce failed:', err.message);
-    }
-  }, 3000);
-
-  setInterval(async () => {
-    try {
-      const geozone = pick(GEOZONES);
-      await produceRecord('weather.conditions', {
-        geozone,
+  // Each producer at its base (Normal-pace) interval; the pace factor
+  // stretches all of them.
+  // Telemetry is staggered: one vehicle per tick, round-robin, so every
+  // vehicle still reports once per interval (3 s at Normal pace) but the
+  // records arrive evenly spread - one every 250 ms at Normal, every 1.25 s at
+  // Slow - instead of all 12 at once. Bursts made the map and ticker jump in
+  // lockstep and were hard to follow in a demo.
+  let nextVehicle = 0;
+  const producers = [
+    {
+      name: 'vehicle.telemetry', baseMs: 3000 / vehicles.length, run: () => {
+        const v = vehicles[nextVehicle];
+        nextVehicle = (nextVehicle + 1) % vehicles.length;
+        step(v);
+        return produceRecord('vehicle.telemetry', telemetryRecord(v));
+      },
+    },
+    {
+      name: 'weather.conditions', baseMs: 20000, run: () => produceRecord('weather.conditions', {
+        geozone: pick(GEOZONES),
         condition: pick(['clear', 'clear', 'clear', 'light rain', 'heavy rain', 'fog']),
         temp_c: Number((10 + Math.random() * 20).toFixed(1)),
         wind_kph: Number((5 + Math.random() * 35).toFixed(1)),
         updated_at: new Date().toISOString().replace(/\.\d+Z$/, '.000Z'),
-      });
-    } catch (err) {
-      console.error('[fleet-telemetry-simulator] weather.conditions produce failed:', err.message);
-    }
-  }, 20000);
+      }),
+    },
+    {
+      // 1% chance per tick - at Normal pace, one new incident every ~5
+      // minutes. Was 4% (~75s average): with only 6 geozones and 12
+      // vehicles, that rate kept most of the fleet sitting in a "recently
+      // incident-hit" zone at any given moment, which read as implausibly
+      // saturated on the Network Conditions table and the impacted-deliveries
+      // KPI.
+      name: 'traffic.incidents', baseMs: 3000, run: async () => {
+        if (Math.random() >= 0.01) return;
+        const geozone = pick(GEOZONES);
+        await produceRecord('traffic.incidents', {
+          geozone,
+          type: pick(['congestion', 'road closure', 'collision reported', 'roadworks']),
+          severity: pick(['low', 'medium', 'high']),
+          timestamp: new Date().toISOString().replace(/\.\d+Z$/, '.000Z'),
+        });
+        console.error(`[fleet-telemetry-simulator] produced -> traffic.incidents (${geozone})`);
+      },
+    },
+    {
+      name: 'parcel.volume', baseMs: 8000, run: () => {
+        const v = pick(vehicles);
+        v.parcelsOnboard = clamp(v.parcelsOnboard + Math.round((Math.random() - 0.5) * 10), 0, 100);
+        return produceRecord('parcel.volume', {
+          vehicle_id: v.id,
+          geozone: v.geozone,
+          parcels_onboard: v.parcelsOnboard,
+          parcels_delivered_last_hour: Math.round(Math.random() * 20),
+          timestamp: new Date().toISOString().replace(/\.\d+Z$/, '.000Z'),
+        });
+      },
+    },
+  ];
 
-  setInterval(async () => {
-    try {
-      // 1% chance per 3s tick - averages one new incident every ~5 minutes.
-      // Was 4% (~75s average): with only 6 geozones and 12 vehicles, that
-      // rate kept most of the fleet sitting in a "recently incident-hit"
-      // zone at any given moment, which read as implausibly saturated on
-      // the Network Conditions table and the impacted-deliveries KPI.
-      if (Math.random() >= 0.01) return;
-      const geozone = pick(GEOZONES);
-      await produceRecord('traffic.incidents', {
-        geozone,
-        type: pick(['congestion', 'road closure', 'collision reported', 'roadworks']),
-        severity: pick(['low', 'medium', 'high']),
-        timestamp: new Date().toISOString().replace(/\.\d+Z$/, '.000Z'),
-      });
-      console.error(`[fleet-telemetry-simulator] produced -> traffic.incidents (${geozone})`);
-    } catch (err) {
-      console.error('[fleet-telemetry-simulator] traffic.incidents produce failed:', err.message);
-    }
-  }, 3000);
+  let timers = [];
+  reschedule = () => {
+    timers.forEach(clearInterval);
+    const { factor } = PACES[pace];
+    timers = producers.map((p) => setInterval(async () => {
+      try {
+        await p.run();
+      } catch (err) {
+        console.error(`[fleet-telemetry-simulator] ${p.name} produce failed:`, err.message);
+      }
+    }, p.baseMs * factor));
+  };
+  running = true;
+  reschedule();
 
-  setInterval(async () => {
-    try {
-      const v = pick(vehicles);
-      v.parcelsOnboard = clamp(v.parcelsOnboard + Math.round((Math.random() - 0.5) * 10), 0, 100);
-      await produceRecord('parcel.volume', {
-        vehicle_id: v.id,
-        geozone: v.geozone,
-        parcels_onboard: v.parcelsOnboard,
-        parcels_delivered_last_hour: Math.round(Math.random() * 20),
-        timestamp: new Date().toISOString().replace(/\.\d+Z$/, '.000Z'),
-      });
-    } catch (err) {
-      console.error('[fleet-telemetry-simulator] parcel.volume produce failed:', err.message);
-    }
-  }, 8000);
-
-  console.error('[fleet-telemetry-simulator] started - producing continuous real telemetry/weather/traffic/parcel data (AUTO_TELEMETRY=false to disable)');
+  console.error(`[fleet-telemetry-simulator] started at pace ${pace} (${PACES[pace].description}) - producing continuous real telemetry/weather/traffic/parcel data (AUTO_TELEMETRY=false to disable)`);
 }

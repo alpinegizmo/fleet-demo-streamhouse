@@ -228,6 +228,7 @@ services:
       # prompt, 7b skipped the tools and invented answers; 3b queries reliably.
       CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:3b}
       ICEBERG_REST_URL: http://iceberg-rest:8181   # Behind the Scenes tab watches Iceberg commits
+      SIM_PACE: ${SIM_PACE:-normal}   # starting pace: normal | slow | minimal (console switch changes it live)
       # AUTO_TELEMETRY: "false"   # stop the continuous simulator
     restart: unless-stopped
 

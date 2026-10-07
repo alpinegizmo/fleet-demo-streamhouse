@@ -130,6 +130,13 @@
   button.act:hover{background:var(--red-dim);}
   button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink);padding:9px 14px;border-radius:7px;font-size:12.5px;cursor:pointer;}
   button.ghost:hover{border-color:var(--steel);}
+  /* Background traffic pace switch (sidebar) */
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--panel);}
+  .seg button{flex:1;background:transparent;border:none;padding:7px 0;font-family:var(--font-body);font-size:12px;color:var(--ink);cursor:pointer;}
+  .seg button+button{border-left:1px solid var(--line);}
+  .seg button.on{background:var(--ink);color:#fff;font-weight:600;}
+  .seg button:disabled{color:var(--steel);cursor:not-allowed;}
+  .seg-hint{font-size:11px;color:var(--steel);margin-top:6px;line-height:1.35;}
 
   table{width:100%;border-collapse:collapse;font-size:12.5px;}
   th{text-align:left;color:var(--steel);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;padding:8px 10px;border-bottom:1px solid var(--line);}
@@ -186,7 +193,16 @@
     <div class="navitem" data-view="maintenance"><span class="sw" style="background:var(--amber)"></span>Maintenance<span class="count" id="count-maintenance">0</span></div>
     <div class="navitem" data-view="live"><span class="sw" style="background:var(--purple)"></span>Live Pipeline<span class="count" id="count-live">0</span></div>
     <div class="navitem" data-view="behindscenes"><span class="sw" style="background:var(--green)"></span>Behind the Scenes</div>
-    <div class="navlabel" style="margin-top:14px;">Demo controls</div>
+    <div class="navlabel" style="margin-top:14px;">Background traffic</div>
+    <div style="padding:2px 10px 6px;">
+      <div class="seg" id="paceSwitch">
+        <button data-pace="normal">Normal</button>
+        <button data-pace="slow">Slow</button>
+        <button data-pace="minimal">Minimal</button>
+      </div>
+      <div class="seg-hint" id="paceHint">&nbsp;</div>
+    </div>
+    <div class="navlabel" style="margin-top:6px;">Demo controls</div>
     <div style="padding:6px 10px;">
       <button class="act" id="liveInjectBtn" style="width:100%;margin-bottom:8px;background:var(--purple);"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Inject REAL engine spike</button>
       <button class="act" id="liveTrafficBtn" style="width:100%;margin-bottom:8px;background:var(--purple);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>Inject REAL traffic incident</button>
@@ -1046,6 +1062,38 @@ document.getElementById('traceCloseBtn').addEventListener('click', ()=>{
   activeTrace = null;
   renderTraceStrip();
 });
+
+/* ---------- background traffic pace ----------
+   How fast the simulator produces (fleet-context-engine's
+   telemetry-simulator.js). It's one setting for the whole pipeline, shared by
+   every viewer, so it's re-read periodically rather than kept locally. Slower
+   pace = proportionally fewer events, recommendations, ticker and map updates,
+   so a demo injection stands out. */
+function renderPace(state){
+  const buttons = document.querySelectorAll('#paceSwitch button');
+  const hint = document.getElementById('paceHint');
+  if (!state || !state.enabled){
+    buttons.forEach(b => { b.disabled = true; b.classList.remove('on'); });
+    hint.textContent = 'Simulator not running (SIMULATED mode or AUTO_TELEMETRY=false).';
+    return;
+  }
+  buttons.forEach(b => { b.disabled = false; b.classList.toggle('on', b.dataset.pace === state.pace); });
+  const p = state.paces[state.pace];
+  hint.textContent = p ? p.description.charAt(0).toUpperCase() + p.description.slice(1) + '.' : '';
+}
+async function loadPace(){
+  try { renderPace(await liveFetch('/api/simulator')); } catch { /* not connected yet */ }
+}
+document.querySelectorAll('#paceSwitch button').forEach(b => b.addEventListener('click', async ()=>{
+  if (!liveConnected){ alert('Not connected to fleet-context-engine.'); return; }
+  try {
+    renderPace(await liveFetch('/api/simulator', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pace: b.dataset.pace})}));
+  } catch (err) {
+    alert('Failed to change pace: ' + err.message);
+  }
+}));
+loadPace();
+setInterval(loadPace, 5000);
 
 /* ---------- demo controls ---------- */
 document.getElementById('liveInjectBtn').addEventListener('click', async ()=>{

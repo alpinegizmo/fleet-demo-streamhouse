@@ -49,6 +49,7 @@ Against the compose stack, stop the `fleet-app` container first
 | `KAFKA_BOOTSTRAP` | Kafka bootstrap servers; unset = SIMULATED |
 | `HTTP_PORT` / `PORT` | listening port (default 8787) |
 | `AUTO_TELEMETRY` | `false` stops the simulator |
+| `SIM_PACE` | the simulator's starting pace: `normal` (every vehicle every 3 s), `slow` (15 s), `minimal` (30 s) |
 | `LLM_BASE_URL`, `LLM_MODEL`, `CHAT_MODEL` | the chat agent's OpenAI-compatible endpoint and model (`CHAT_MODEL` wins over `LLM_MODEL`); `LLM_MODEL` is also shown in the console |
 | `ICEBERG_REST_URL` | Iceberg REST catalog to watch for commits (optional) |
 
@@ -65,6 +66,7 @@ All `GET` unless noted; the console polls these every ~3 s.
 | `/api/weather`, `/api/traffic-incidents`, `/api/parcel-volume` | context topics |
 | `/api/maintenance-alerts`, `/api/driver-risk-events`, `/api/driver-risk-events-anomaly`, `/api/risk-comparison` | business events |
 | `/api/pipeline-events?since=` | Behind the Scenes animation feed |
+| `/api/simulator`, `POST /api/simulator` | the simulator's pace: `{ enabled, pace, paces }`; POST `{ pace: "normal" \| "slow" \| "minimal" }` (the console's Background traffic switch) |
 | `POST /api/inject-incident`, `/api/inject-traffic-incident`, `/api/inject-speed-anomaly` | demo buttons — produce real records |
 | `POST /api/reset` | deletes every record in every topic (topics and Flink jobs untouched) |
 | `POST /api/ask` | `{ conversation: [{role, content}, …] }` → `{ answer, trace }` |
