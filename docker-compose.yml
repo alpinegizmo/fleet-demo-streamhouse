@@ -152,6 +152,14 @@ services:
     ports:
       - "8181:8181"
     environment:
+      # SQLite can't take concurrent writes from more than one connection: the
+      # lakehouse job commits all 7 tables together on each checkpoint, and
+      # with the default pool of 2 connections those commits collide
+      # (SQLITE_BUSY / SQLITE_BUSY_SNAPSHOT -> HTTP 500 -> the job restarts,
+      # and re-commits, in a loop). One connection serializes catalog writes;
+      # the busy timeout covers anything else briefly holding the file.
+      CATALOG_CLIENTS: "1"
+      CATALOG_URI: jdbc:sqlite:/tmp/iceberg_catalog.db?busy_timeout=10000
       CATALOG_WAREHOUSE: s3://warehouse/
       CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
       CATALOG_S3_ENDPOINT: http://objectstore:9000
