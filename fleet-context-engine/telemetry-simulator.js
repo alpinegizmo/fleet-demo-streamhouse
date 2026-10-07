@@ -62,13 +62,25 @@ function step(v) {
   if (Math.abs(v.lat - v.homeLat) > 0.02) v.dLat *= -1;
   if (Math.abs(v.lng - v.homeLng) > 0.02) v.dLng *= -1;
   v.speed = clamp(v.speed + (Math.random() - 0.5) * 10, 0, 110);
-  v.engineTemp = clamp(v.engineTemp + (Math.random() - 0.5) * 2.5, 70, 108);
+  // Mean-reverting around a normal operating temperature, so running hot
+  // (over the 100 C maintenance threshold) is occasional. A plain random walk
+  // clamped at 108 C drifted up and stuck there: a quarter of all readings
+  // raised a maintenance alert.
+  v.engineTemp = clamp(v.engineTemp + (92 - v.engineTemp) * 0.03 + (Math.random() - 0.5) * 2.5, 70, 110);
   v.fuel = clamp(v.fuel - Math.random() * 0.3, 5, 100);
   v.tyrePressure = clamp(v.tyrePressure + (Math.random() - 0.5) * 0.6, 80, 102);
 }
 
+// Most braking is gentle; a harsh stop (score over the 0.7 safety threshold)
+// is rare, and likelier at speed. A uniform random score made ~30% of all
+// readings a harsh-braking safety event.
+function brakingScore(v) {
+  const harsh = Math.random() < (v.speed > 70 ? 0.04 : 0.01);
+  return Number((harsh ? 0.72 + Math.random() * 0.28 : Math.random() * 0.4).toFixed(2));
+}
+
 function telemetryRecord(v) {
-  const overspeed = v.speed > 95 ? Math.random() < 0.7 : Math.random() < 0.05;
+  const overspeed = v.speed > 95 ? Math.random() < 0.7 : Math.random() < 0.005;
   return {
     object_id: v.id,
     datetime: new Date().toISOString().replace(/\.\d+Z$/, '.000Z'),
@@ -106,7 +118,7 @@ function telemetryRecord(v) {
         fuel_level_can: Number(v.fuel.toFixed(1)),
         speed_wheel: Number(v.speed.toFixed(1)),
         overspeeding_events: overspeed ? 'OVERSPEED' : 'NO_OVERSPEED',
-        ecodrive_braking_events: Number(Math.random().toFixed(2)),
+        ecodrive_braking_events: brakingScore(v),
         ecodrive_harsh_acceleration: Number(Math.random().toFixed(2)),
         ecodrive_idling_time: Number(Math.random().toFixed(2)),
         lcv_driver_doors: 'CLOSE',
