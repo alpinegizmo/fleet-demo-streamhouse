@@ -22,7 +22,7 @@ the Mac's GPU:
 
 ```bash
 brew install ollama && brew services start ollama
-make model        # ollama pull qwen2.5:3b (~1.9 GB)
+make model        # ollama pull qwen2.5:7b and qwen2.5:3b (~6.6 GB)
 make up           # builds and starts everything
 open http://localhost:8787
 ```
@@ -47,7 +47,7 @@ data; `make reset` also deletes the data.
 | `fleet-app` | `fleet-context-engine`: Kafka consumer, telemetry simulator, HTTP API, the console, the MCP server | http://localhost:8787 (console), `/mcp` (MCP) |
 | one-shot | `kafka-init` (topics), `objectstore-init` (bucket), `seed` (backfill), `flink-sql-init` (submits the SQL jobs) | |
 | `duckdb` | DuckDB shell with the Iceberg catalog attached (`make duckdb`; not started by `up`) | |
-| Ollama (host) | `qwen2.5:3b`, OpenAI-compatible API, used by Flink's `ML_PREDICT` and the chat agent | `localhost:11434` |
+| Ollama (host) | `qwen2.5:7b` for Flink's `ML_PREDICT` recommendations, `qwen2.5:3b` for the chat agent; OpenAI-compatible API | `localhost:11434` |
 
 ## The pipeline
 
@@ -150,9 +150,9 @@ before `make up`:
 | Variable | Default | |
 |---|---|---|
 | `APP_PORT` | `8787` | host port for the console/API/MCP |
-| `LLM_MODEL` | `qwen2.5:3b` | model for Flink's recommendations (and the chat agent) |
+| `LLM_MODEL` | `qwen2.5:7b` | model for Flink's recommendations |
 | `LLM_BASE_URL` | `http://host.docker.internal:11434/v1` | any OpenAI-compatible API |
-| `CHAT_MODEL` | `LLM_MODEL` | a different model for the chat agent only (set in `docker-compose.yml`) |
+| `CHAT_MODEL` | `qwen2.5:3b` | model for the chat agent |
 | `AUTO_TELEMETRY` | on | set `"false"` in `docker-compose.yml` to stop the simulator |
 
 Changing `LLM_MODEL` or `LLM_BASE_URL` recreates the Flink containers on the
@@ -174,10 +174,15 @@ next `make up`; the jobs are resubmitted and resume from their offsets.
 - **One model server, shared.** Flink's `ML_PREDICT` calls and the chat
   agent both use Ollama. Chat requests are capped (400 tokens, 60 s) so a
   runaway answer can't queue the pipeline's calls behind it.
-- **Small-model answers.** `qwen2.5:3b` is fast (~0.1 s per recommendation)
-  but its advice is repetitive, and the chat agent's answers are correct
-  but sometimes vague. A bigger model is one variable away (`LLM_MODEL`,
-  `CHAT_MODEL`).
+- **Model choices are trade-offs.** The pipeline needs ~2.8 model calls/s.
+  `qwen2.5:7b` handles 4.7/s (0.8 s each, 4 in parallel) and gives more
+  concrete advice than 3b, but uses ~60 % of that capacity, so a backlog
+  (after Ollama was down, or the Mac slept) drains about twice as slowly as
+  with `LLM_MODEL=qwen2.5:3b` (6.9/s). The chat agent stays on 3b: with its
+  long tool-calling prompt, 7b skipped the tools and invented vehicles and
+  numbers. The agent now refuses any answer not backed by a successful
+  query, but small models can still misread a compound question (e.g.
+  report the top vehicle's count as the total).
 - **The Mac sleeping pauses everything.** The pipeline resumes on wake; for a
   demo, `caffeinate -dims`.
 

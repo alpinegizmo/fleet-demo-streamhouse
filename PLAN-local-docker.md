@@ -13,7 +13,7 @@ local OpenAI-compatible model, all started by one `docker compose up`.
 | Flink | Apache Flink **2.2** (the newest line with matching Kafka connector `5.0.0-2.2`, `iceberg-flink-runtime-2.2:1.12.0`, `flink-model-openai:2.2.x`). |
 | AI in the stream | Flink-native `CREATE MODEL ... WITH ('provider'='openai')` + `ML_PREDICT`, pointed at the local model. |
 | LLM runtime | **Ollama, installed natively on the host** (Metal GPU), reached from containers at `host.docker.internal:11434`. Originally Docker Model Runner, but its llama.cpp process got `Operation not permitted` opening model files on this machine (Phase 3). |
-| Model | `qwen2.5:3b` (Q4, ~1.9 GB): ~0.1 s per one-sentence call warm. Started on `qwen2.5:1.5b`, but on harsh-braking safety events it answered "Reduce speed…" 20/20 times; 3b gives on-topic advice (braking training/coaching) at nearly the same speed. `LLM_MODEL` / `LLM_BASE_URL` switch to any model or OpenAI-compatible server. |
+| Model | `qwen2.5:7b` for recommendations, `qwen2.5:3b` for the chat agent. Started on `qwen2.5:1.5b`, but on harsh-braking safety events it answered "Reduce speed…" 20/20 times; 3b gave on-topic advice; 7b more concrete advice still, at 4.7 calls/s vs ~2.8 needed (3b: 6.9). 7b isn't used for chat: with the agent's long tool prompt it skipped the tools and invented answers. `LLM_MODEL` / `LLM_BASE_URL` switch to any model or OpenAI-compatible server. |
 | Tableflow replacement | Flink → **Iceberg** (REST catalog + S3-compatible object store) → **DuckDB**. |
 | RTCE replacement | **Own MCP server** inside `fleet-context-engine` (`/mcp`, Streamable HTTP), same `listTopics` / `getMetadata` / `queryData` tools. |
 | AI_DETECT_ANOMALIES replacement | Per-vehicle **z-score** with a Flink SQL OVER window, same output topic shape. |
@@ -55,7 +55,7 @@ Compose services:
 | `seed` | repo `Dockerfile`, `node seed.js` | one-shot backfill (profile `seed`, or run automatically once) |
 | `duckdb` | small image w/ DuckDB CLI + iceberg/httpfs ext | profile `tools`: `docker compose run --rm duckdb` |
 
-LLM wiring: Ollama runs on the host (`brew install ollama && brew services start ollama && ollama pull qwen2.5:3b`). Compose passes `LLM_BASE_URL` (default `http://host.docker.internal:11434/v1`) and `LLM_MODEL` to Flink, and the model name to the app for display.
+LLM wiring: Ollama runs on the host (`brew install ollama && brew services start ollama && ollama pull qwen2.5:7b && ollama pull qwen2.5:3b`). Compose passes `LLM_BASE_URL` (default `http://host.docker.internal:11434/v1`) and `LLM_MODEL` to Flink, and the model name to the app for display.
 
 ## Flink SQL (replaces `terraform/flink_statements.tf`)
 
@@ -119,7 +119,7 @@ Relabel only, no structural change: "OpenAI" → model name from `/api/health`; 
 - **Iceberg table maintenance isn't configured.** Every 30 s checkpoint commits a snapshot with small files per table, and nothing expires snapshots or compacts files, so metadata and file counts grow without bound over a long-running demo. Fine for a session; `docker compose down -v` resets it. (A real "where challenges remain" topic for the course: Tableflow does this for you; OSS Flink only offers it via the DataStream table-maintenance API.)
 - **Ollama on the host.** The AI job and `/api/ask` need Ollama running (`brew services start ollama`). If it stops, the AI job keeps retrying and catches up when it returns (tested: 45 s outage, no recommendations lost). Ollama in a container would make the stack self-contained, but on a Mac that means CPU only.
 - **No Flink HA.** A jobmanager restart loses running jobs; `flink-sql-init` resubmits on `up`, and Kafka group offsets + Iceberg checkpoints make that resume cleanly rather than reprocess.
-- **Footprint.** Measured: ~5.7 GB Docker memory (Flink ~3.2 GB, Kafka ~1.4 GB, object store ~0.7 GB, catalog ~0.3 GB, app ~0.1 GB) plus ~2.8 GB host RAM for qwen2.5:3b.
+- **Footprint.** Measured: ~5.7 GB Docker memory (Flink ~3.2 GB, Kafka ~1.4 GB, object store ~0.7 GB, catalog ~0.3 GB, app ~0.1 GB) plus ~8 GB host RAM for both models (qwen2.5:7b ~5.5 GB, qwen2.5:3b ~2.8 GB).
 - **Host sleep pauses everything.** Docker's VM stops while the Mac sleeps; the pipeline resumes on wake (observed). Keep the Mac awake (`caffeinate -dims`) during a demo.
 - **Schema drift.** With no registry, a producer can emit a field the DDL doesn't know about and Flink silently ignores it (or drops the record with `ignore-parse-errors`). Keep `topic-schemas.js` and the DDL in one PR whenever a shape changes.
 

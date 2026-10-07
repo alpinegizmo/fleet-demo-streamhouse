@@ -1,7 +1,9 @@
 # Shortcuts for the local fleet demo. Everything here is plain docker compose
 # underneath - see docker-compose.yml.
 
-MODEL ?= qwen2.5:3b
+# Flink's ML_PREDICT recommendations, and the console's chat agent.
+LLM_MODEL ?= qwen2.5:7b
+CHAT_MODEL ?= qwen2.5:3b
 
 .PHONY: help up down reset status logs jobs replace sql duckdb model
 
@@ -14,7 +16,7 @@ help:
 	@echo "make replace JOB=ai   redeploy one Flink job after editing local/flink/sql/<nn>-JOB.sql"
 	@echo "make sql           Flink SQL shell with every topic as a table"
 	@echo "make duckdb        DuckDB shell on the Iceberg tables"
-	@echo "make model         pull the LLM into Ollama (MODEL=$(MODEL))"
+	@echo "make model         pull the models into Ollama ($(LLM_MODEL), $(CHAT_MODEL))"
 
 up:
 	docker compose up -d --build
@@ -54,4 +56,5 @@ duckdb:
 
 model:
 	@command -v ollama > /dev/null || { echo "Ollama not found: brew install ollama && brew services start ollama"; exit 1; }
-	ollama pull $(MODEL)
+	ollama pull $(LLM_MODEL)
+	ollama pull $(CHAT_MODEL)

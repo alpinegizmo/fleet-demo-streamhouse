@@ -377,7 +377,7 @@
       <div><b>11</b> topics</div>
       <div><b>3</b> continuous Flink SQL jobs</div>
       <div><b>7</b> Iceberg tables</div>
-      <div>Model: <b>qwen2.5:3b</b> on Ollama, ~0.1 s per recommendation</div>
+      <div>Models: <b>qwen2.5:7b</b> for recommendations (~0.8 s each), <b>qwen2.5:3b</b> for chat, on Ollama</div>
     </div>
   </section>
 
@@ -403,7 +403,7 @@
         <div class="tbar"><span></span><span></span><span></span></div>
         <pre><span class="cmt"># once: a local model server (uses the Mac's GPU)</span>
 <span class="cmd">brew install ollama && brew services start ollama</span>
-<span class="cmd">make model</span>      <span class="cmt"># ollama pull qwen2.5:3b</span>
+<span class="cmd">make model</span>      <span class="cmt"># ollama pull qwen2.5:7b, qwen2.5:3b</span>
 <span class="cmt"># Kafka, Flink, Iceberg, the app — all in Docker</span>
 <span class="cmd">make up</span>
 <span class="cmd">open http://localhost:8787</span></pre>

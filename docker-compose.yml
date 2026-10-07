@@ -3,7 +3,7 @@
 # by Ollama on the host (not in a container, so it can use the Mac's GPU):
 #
 #   brew install ollama && brew services start ollama
-#   ollama pull qwen2.5:3b
+#   ollama pull qwen2.5:7b && ollama pull qwen2.5:3b     # or: make model
 #
 # Any other OpenAI-compatible server works too - set LLM_BASE_URL and
 # LLM_MODEL.
@@ -46,7 +46,7 @@ x-flink: &flink
     - "host.docker.internal:host-gateway"   # Docker Desktop provides this; Linux needs it
   environment:
     LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
-    LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+    LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}   # ML_PREDICT recommendations
     <<: *s3
     FLINK_PROPERTIES: |
       jobmanager.rpc.address: flink-jobmanager
@@ -215,8 +215,10 @@ services:
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}   # for the /api/ask chat agent
-      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}   # also shown in the console
-      # CHAT_MODEL: qwen2.5:7b   # a different model for the chat agent only
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}   # shown in the console (Flink makes the calls)
+      # The chat agent's model. 3b, not 7b: given the agent's long tool-calling
+      # prompt, 7b skipped the tools and invented answers; 3b queries reliably.
+      CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:3b}
       ICEBERG_REST_URL: http://iceberg-rest:8181   # Behind the Scenes tab watches Iceberg commits
       # AUTO_TELEMETRY: "false"   # stop the continuous simulator
     restart: unless-stopped

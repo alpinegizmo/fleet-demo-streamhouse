@@ -16,7 +16,7 @@ import { FLEET_TOOLS } from './mcp-server.js';
 import { TOPICS, describeColumns } from './topic-schemas.js';
 import { tableAlias } from './query-store.js';
 
-const TOOLS = Object.entries(FLEET_TOOLS).map(([name, tool]) => ({
+export const TOOLS = Object.entries(FLEET_TOOLS).map(([name, tool]) => ({
   type: 'function',
   function: {
     name,
@@ -36,7 +36,7 @@ function catalog() {
   }).join('\n');
 }
 
-const SYSTEM_PROMPT = `You answer questions about a live fleet of delivery vehicles in Melbourne by querying its real-time data with the queryData tool. The data is the current state of a Kafka/Flink pipeline - raw vehicle telemetry, weather, traffic, parcel loads, Flink-derived business events, and AI-generated recommendations - not a cached or batch copy. Every answer must come from a query you just ran.
+export const SYSTEM_PROMPT = `You answer questions about a live fleet of delivery vehicles in Melbourne by querying its real-time data with the queryData tool. The data is the current state of a Kafka/Flink pipeline - raw vehicle telemetry, weather, traffic, parcel loads, Flink-derived business events, and AI-generated recommendations - not a cached or batch copy. Every answer must come from a query you just ran.
 
 Tables (DuckDB SQL; nested STRUCT fields use dot notation, e.g. "position".speed; double-quote columns named position, type, timestamp, condition, datetime):
 ${catalog()}
@@ -76,14 +76,26 @@ export async function askAboutFleetData(conversation, { maxSteps = 6 } = {}) {
     messages.push(msg);
 
     if (!msg.tool_calls?.length) {
-      // Small models sometimes answer a failed query with "let me fix that
-      // and try again" - and then stop. Hold them to it, once.
-      if (trace.at(-1)?.result?.error && !nudged) {
+      // The system prompt says every answer must come from a query; this
+      // enforces it. An answer only counts once a queryData call has
+      // succeeded. Without that, models answer anyway: qwen2.5:7b, given
+      // this prompt, skipped the tools every time and invented vehicles
+      // ("V123456") and counts, and small models say "let me fix that query"
+      // after an error and then stop. Push back once; if the model still
+      // won't query, say so rather than pass on an ungrounded answer.
+      const grounded = trace.some((t) => t.tool === 'queryData' && !t.result?.error);
+      if (grounded) return { answer: msg.content, trace };
+      if (!nudged) {
         nudged = true;
-        messages.push({ role: 'user', content: 'Run the corrected query now with the queryData tool, then answer.' });
+        messages.push({
+          role: 'user',
+          content: trace.length
+            ? 'Run the corrected query now with the queryData tool, then answer from its result.'
+            : "You haven't queried the data yet, so that answer isn't based on it. Call queryData now, then answer from its result.",
+        });
         continue;
       }
-      return { answer: msg.content, trace };
+      return { answer: "I couldn't get that from the live data. Try asking it a different way.", trace };
     }
 
     for (const call of msg.tool_calls) {
