@@ -119,6 +119,11 @@
   .rec.med{border-color:var(--amber);}
   .rec .meta{font-family:var(--font-mono);font-size:10px;color:var(--steel);margin-bottom:3px;display:flex;justify-content:space-between;}
   .rec .conf{color:var(--green);}
+  /* A recommendation caused by a demo injection (it carries the injection_id
+     the pipeline propagated) - stands out from the steady background traffic. */
+  .rec.injected{border-left-color:var(--purple);background:#F1EDFC;box-shadow:inset 0 0 0 1px #DDD4F8;}
+  .inj-badge{display:inline-block;font-family:var(--font-mono);font-size:9.5px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;color:#fff;background:var(--purple);border-radius:3px;padding:1px 6px;margin-right:6px;}
 
   .btnrow{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
   button.act{background:var(--red);color:#fff;border:none;padding:9px 14px;border-radius:7px;font-family:var(--font-body);font-weight:600;font-size:12.5px;cursor:pointer;}
@@ -646,9 +651,12 @@ function renderFeed(elId, recs){
   // feed uses column-reverse, so append in reverse chronological order (oldest of this batch first)
   [...recs].reverse().forEach(r=>{
     const div = document.createElement('div');
-    div.className = 'rec ' + feedSeverityClass(r.severity);
+    div.className = 'rec ' + (r.injectionId ? 'injected ' : '') + feedSeverityClass(r.severity);
     const when = r.timestamp ? new Date(r.timestamp).toLocaleTimeString('en-AU', {hour12:false}) : '';
-    div.innerHTML = `<div class="meta"><span>ai.${r.domain}.recommendations · ${r.vehicleId||''}</span><span class="conf">${when}</span></div>${r.text}`;
+    const badge = r.injectionId
+      ? `<span class="inj-badge">${myInjectionIds.has(r.injectionId) ? 'Your injection' : 'Injected'}</span>`
+      : '';
+    div.innerHTML = `<div class="meta"><span>${badge}ai.${r.domain}.recommendations · ${r.vehicleId||''}</span><span class="conf">${when}</span></div>${r.text}`;
     feed.appendChild(div);
   });
 }
@@ -949,7 +957,12 @@ setInterval(poll, 3000);
    independent signal - there's no separate Kafka message for "the model was
    called" - so it's shown as an inferred in-progress state between stages 2
    and 4, not something actually observed. */
-let activeTrace = null; // { vehicleId, injectedAt, stage, stageTimes: {1,2,3,4}, hideTimer }
+// Injection IDs this tab created (returned by the inject endpoints). A
+// recommendation carrying one of these is badged "Your injection"; one
+// carrying any other injection ID (another tab or presenter) is "Injected".
+const myInjectionIds = new Set();
+
+let activeTrace = null; // { vehicleId, injectionId, injectedAt, stage, stageTimes: {1,2,3,4}, hideTimer }
 const TRACE_STEPS = [
   {n:1, label:'Injected'},
   {n:2, label:'Flink derived'},
@@ -957,10 +970,10 @@ const TRACE_STEPS = [
   {n:4, label:'Live'},
 ];
 
-function startTrace(vehicleId){
+function startTrace(vehicleId, injectionId){
   if (activeTrace && activeTrace.hideTimer) clearTimeout(activeTrace.hideTimer);
   const now = Date.now();
-  activeTrace = { vehicleId, injectedAt: now, stage: 1, stageTimes: {1: now} };
+  activeTrace = { vehicleId, injectionId, injectedAt: now, stage: 1, stageTimes: {1: now} };
   document.getElementById('traceVehicle').textContent = vehicleId;
   document.getElementById('traceStrip').style.display = 'block';
   renderTraceStrip();
@@ -1007,7 +1020,7 @@ async function checkTraceProgress(recsMaintenance){
   if (activeTrace.stage < 2){
     try {
       const alerts = await liveFetch('/api/maintenance-alerts?vehicleId=' + encodeURIComponent(activeTrace.vehicleId) + '&limit=5');
-      const fresh = alerts.find(a => a.receivedAt >= activeTrace.injectedAt);
+      const fresh = alerts.find(a => activeTrace.injectionId ? a.injectionId === activeTrace.injectionId : a.receivedAt >= activeTrace.injectedAt);
       if (fresh){
         activeTrace.stage = 2;
         activeTrace.stageTimes[2] = now;
@@ -1016,7 +1029,9 @@ async function checkTraceProgress(recsMaintenance){
     } catch { /* transient - next poll cycle will retry */ }
   }
 
-  const freshRec = (recsMaintenance || []).find(r => r.vehicleId === activeTrace.vehicleId && Date.parse(r.timestamp) >= activeTrace.injectedAt);
+  const freshRec = (recsMaintenance || []).find(r => activeTrace.injectionId
+    ? r.injectionId === activeTrace.injectionId
+    : r.vehicleId === activeTrace.vehicleId && Date.parse(r.timestamp) >= activeTrace.injectedAt);
   if (freshRec){
     activeTrace.stage = 4;
     activeTrace.stageTimes[4] = now;
@@ -1037,7 +1052,8 @@ document.getElementById('liveInjectBtn').addEventListener('click', async ()=>{
   if (!liveConnected){ alert('Not connected to fleet-context-engine — see SETUP.md to enable LIVE mode.'); return; }
   try {
     const result = await liveFetch('/api/inject-incident', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
-    startTrace(result.id);
+    if (result.injectionId) myInjectionIds.add(result.injectionId);
+    startTrace(result.id, result.injectionId);
   } catch (err) {
     alert('Failed to inject: ' + err.message);
   }
@@ -1055,6 +1071,7 @@ document.getElementById('liveSpeedAnomalyBtn').addEventListener('click', async (
   if (!liveConnected){ alert('Not connected to fleet-context-engine — see SETUP.md to enable LIVE mode.'); return; }
   try {
     const result = await liveFetch('/api/inject-speed-anomaly', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    if (result.injectionId) myInjectionIds.add(result.injectionId);
     alert('Injected a ' + result.speedKmh + ' km/h spike on ' + result.id + ' in ' + result.geozone + '. ' + (result.note||'') + '\n\nCheck the Safety tab’s Heuristic vs. per-vehicle baseline panel in a few seconds.');
   } catch (err) {
     alert('Failed to inject: ' + err.message);

@@ -45,6 +45,13 @@ const GEOZONE_COORDS = {
   'dandenong-south': [-37.9930, 145.2150],
 };
 
+// Tags a demo injection so the pipeline carries it through to the
+// recommendations it causes (the injection_id column in
+// local/flink/sql/00-tables.sql) and the console can mark them.
+function newInjectionId() {
+  return `inj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
 export function isLiveModeConfigured() {
   return Boolean(process.env.KAFKA_BOOTSTRAP);
 }
@@ -315,6 +322,7 @@ class LiveContextEngine {
           severity: r.severity,
           message: r.message,
           eventTime: r.event_time,
+          injectionId: r.injection_id ?? null,
           receivedAt: Date.now(),
         });
         this.maintenanceAlerts = this.maintenanceAlerts.slice(0, 200);
@@ -380,10 +388,10 @@ class LiveContextEngine {
         break;
       }
       case 'ai.maintenance.recommendations':
-        this._pushRecommendation('maintenance', r.vehicle_id, r.recommendation, r.severity);
+        this._pushRecommendation('maintenance', r.vehicle_id, r.recommendation, r.severity, r.injection_id);
         break;
       case 'ai.safety.recommendations':
-        this._pushRecommendation('safety', r.vehicle_id, r.recommendation, r.risk_level);
+        this._pushRecommendation('safety', r.vehicle_id, r.recommendation, r.risk_level, r.injection_id);
         break;
       case 'ai.delivery.recommendations':
         this._pushRecommendation('delivery', r.vehicle_id, r.recommendation, r.performance_status);
@@ -396,8 +404,8 @@ class LiveContextEngine {
   // Keeps the newest 200 per domain, not 200 overall: safety events arrive
   // ~30x as often as maintenance alerts, so a single shared cap pushed every
   // maintenance recommendation out within seconds.
-  _pushRecommendation(domain, vehicleId, text, severity) {
-    this.recommendations.unshift({ domain, vehicleId, text, severity, timestamp: new Date().toISOString() });
+  _pushRecommendation(domain, vehicleId, text, severity, injectionId = null) {
+    this.recommendations.unshift({ domain, vehicleId, text, severity, injectionId: injectionId ?? null, timestamp: new Date().toISOString() });
     const perDomain = {};
     this.recommendations = this.recommendations.filter((r) => (perDomain[r.domain] = (perDomain[r.domain] || 0) + 1) <= 200);
   }
@@ -644,9 +652,10 @@ class LiveContextEngine {
         })),
       },
       geozone_ids: [geozone],
+      injection_id: newInjectionId(),
     };
     await produceRecord('vehicle.telemetry', record);
-    return { id, geozone, injected: 'engine_spike', note: 'Real record produced to vehicle.telemetry - the real Flink pipeline will derive a maintenance alert and AI recommendation within a few seconds.' };
+    return { id, geozone, injectionId: record.injection_id, injected: 'engine_spike', note: 'Real record produced to vehicle.telemetry - the real Flink pipeline will derive a maintenance alert and AI recommendation within a few seconds.' };
   }
 
   // Demo control: produces a REAL high-severity traffic incident record.
@@ -700,9 +709,10 @@ class LiveContextEngine {
         })),
       },
       geozone_ids: [geozone],
+      injection_id: newInjectionId(),
     };
     await produceRecord('vehicle.telemetry', record);
-    return { id, geozone, speedKmh: spikeSpeed, injected: 'speed_anomaly', note: 'Real record produced to vehicle.telemetry with speed far outside baseline. Both the heuristic (OVERSPEED) and the per-vehicle baseline should flag it in driver.risk.events / driver.risk.events.anomaly within a few seconds.' };
+    return { id, geozone, speedKmh: spikeSpeed, injectionId: record.injection_id, injected: 'speed_anomaly', note: 'Real record produced to vehicle.telemetry with speed far outside baseline. Both the heuristic (OVERSPEED) and the per-vehicle baseline should flag it in driver.risk.events / driver.risk.events.anomaly within a few seconds.' };
   }
 
   // Demo control: HARD reset. Purges all 11 real topics (see
@@ -899,9 +909,9 @@ class SimulatedContextEngine {
     }
   }
 
-  pushRecommendation(domain, vehicleId, text, severity) {
+  pushRecommendation(domain, vehicleId, text, severity, injectionId = null) {
     this.recommendations.unshift({
-      domain, vehicleId, text, severity,
+      domain, vehicleId, text, severity, injectionId,
       confidence: Math.round(85 + Math.random() * 10),
       timestamp: new Date().toISOString(),
     });
@@ -1023,17 +1033,18 @@ class SimulatedContextEngine {
     v.engineTemp = 104;
     v.maintRisk = 92;
     v.driverRisk = Math.max(v.driverRisk, 72);
+    const injectionId = newInjectionId();
     this.maintenanceAlerts.unshift({
       vehicleId: v.id, geozone: v.geozone, engineTempC: v.engineTemp, severity: 'high',
       message: `Vehicle ${v.id} engine temperature ${v.engineTemp}C near ${v.geozone}`,
-      eventTime: new Date().toISOString(), receivedAt: Date.now(),
+      eventTime: new Date().toISOString(), injectionId, receivedAt: Date.now(),
     });
     this.maintenanceAlerts = this.maintenanceAlerts.slice(0, 200);
-    this.pushRecommendation('maintenance', v.id, `Vehicle ${v.id} shows signs of cooling-system degradation near ${v.geozone}. Inspect the vehicle within 48 hours.`, 'high');
-    this.pushRecommendation('safety', v.id, `Elevated engine heat on ${v.id} correlated with harsh-braking pattern - recommend a driver check-in.`, 'medium');
-    this.pushRecommendation('delivery', v.id, `${v.id} flagged for depot diversion in ${v.geozone} - reassigning remaining stops to nearest available vehicle.`, 'high');
+    this.pushRecommendation('maintenance', v.id, `Vehicle ${v.id} shows signs of cooling-system degradation near ${v.geozone}. Inspect the vehicle within 48 hours.`, 'high', injectionId);
+    this.pushRecommendation('safety', v.id, `Elevated engine heat on ${v.id} correlated with harsh-braking pattern - recommend a driver check-in.`, 'medium', injectionId);
+    this.pushRecommendation('delivery', v.id, `${v.id} flagged for depot diversion in ${v.geozone} - reassigning remaining stops to nearest available vehicle.`, 'high', injectionId);
     setTimeout(() => { v.spiked = false; }, 15000);
-    return { ...v };
+    return { ...v, injectionId };
   }
 
   async injectTrafficIncident(geozone) {

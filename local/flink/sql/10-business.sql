@@ -15,7 +15,8 @@ SELECT
   inputs.calculated_inputs.temperature AS engine_temp_c,
   CASE WHEN inputs.calculated_inputs.temperature > 105 THEN 'high' ELSE 'medium' END AS severity,
   CONCAT('Vehicle ', object_id, ' engine temperature ', CAST(inputs.calculated_inputs.temperature AS STRING), 'C near ', geozone_ids[1]) AS message,
-  `datetime` AS event_time
+  `datetime` AS event_time,
+  injection_id
 FROM `vehicle.telemetry`
 WHERE inputs.calculated_inputs.temperature > 100;
 
@@ -33,7 +34,8 @@ SELECT
     WHEN inputs.device_inputs.overspeeding_events = 'OVERSPEED' OR inputs.device_inputs.ecodrive_braking_events > 0.7 THEN 'medium'
     ELSE 'low'
   END AS risk_level,
-  `datetime` AS event_time
+  `datetime` AS event_time,
+  injection_id
 FROM `vehicle.telemetry`
 WHERE inputs.device_inputs.overspeeding_events = 'OVERSPEED' OR inputs.device_inputs.ecodrive_braking_events > 0.7;
 
@@ -66,13 +68,15 @@ SELECT
   GREATEST(mean_speed - 3 * sd_speed, 0) AS lower_bound,
   mean_speed + 3 * sd_speed AS upper_bound,
   CASE WHEN ABS(speed_kmh - mean_speed) > 4 * sd_speed THEN 'high' ELSE 'medium' END AS risk_level,
-  event_time
+  event_time,
+  injection_id
 FROM (
   SELECT
     vehicle_id,
     geozone,
     speed_kmh,
     event_time,
+    injection_id,
     (sum_speed - speed_kmh) / (readings - 1) AS mean_speed,
     SQRT(GREATEST(
       (sum_sq_speed - speed_kmh * speed_kmh) / (readings - 1)
@@ -84,6 +88,7 @@ FROM (
       geozone_ids[1] AS geozone,
       `position`.speed AS speed_kmh,
       `datetime` AS event_time,
+      injection_id,
       COUNT(`position`.speed) OVER w AS readings,
       SUM(`position`.speed) OVER w AS sum_speed,
       SUM(`position`.speed * `position`.speed) OVER w AS sum_sq_speed

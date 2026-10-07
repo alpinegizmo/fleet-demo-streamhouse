@@ -27,8 +27,8 @@ CREATE CATALOG lake WITH (
 
 CREATE DATABASE IF NOT EXISTS lake.fleet;
 
--- Each Iceberg table has the topic's columns plus the record's Kafka
--- coordinates. Delivery is at-least-once, so a Flink restart can copy a
+-- Each Iceberg table has the topic's columns (including injection_id where
+-- the topic has one) plus the record's Kafka coordinates. Delivery is at-least-once, so a Flink restart can copy a
 -- few records twice; (kafka_partition, kafka_offset) identifies duplicates.
 
 CREATE TABLE IF NOT EXISTS lake.fleet.maintenance_alerts (
@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS lake.fleet.maintenance_alerts (
   severity STRING,
   message STRING,
   event_time STRING,
+  injection_id STRING,
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS lake.fleet.driver_risk_events (
   harsh_braking_score DOUBLE,
   risk_level STRING,
   event_time STRING,
+  injection_id STRING,
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
@@ -65,6 +67,7 @@ CREATE TABLE IF NOT EXISTS lake.fleet.driver_risk_events_anomaly (
   upper_bound DOUBLE,
   risk_level STRING,
   event_time STRING,
+  injection_id STRING,
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
@@ -88,6 +91,7 @@ CREATE TABLE IF NOT EXISTS lake.fleet.ai_maintenance_recommendations (
   severity STRING,
   trigger_event STRING,
   recommendation STRING,
+  injection_id STRING,
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
@@ -99,6 +103,7 @@ CREATE TABLE IF NOT EXISTS lake.fleet.ai_safety_recommendations (
   risk_level STRING,
   speed_kmh DOUBLE,
   recommendation STRING,
+  injection_id STRING,
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
@@ -120,17 +125,17 @@ BEGIN
 
 INSERT INTO lake.fleet.maintenance_alerts
 SELECT vehicle_id, geozone, engine_temp_c, severity, message, event_time,
-       kafka_partition, kafka_offset, kafka_timestamp
+       injection_id, kafka_partition, kafka_offset, kafka_timestamp
 FROM `maintenance.alerts`;
 
 INSERT INTO lake.fleet.driver_risk_events
 SELECT vehicle_id, geozone, speed_kmh, overspeed_status, harsh_braking_score, risk_level, event_time,
-       kafka_partition, kafka_offset, kafka_timestamp
+       injection_id, kafka_partition, kafka_offset, kafka_timestamp
 FROM `driver.risk.events`;
 
 INSERT INTO lake.fleet.driver_risk_events_anomaly
 SELECT vehicle_id, geozone, speed_kmh, forecast_speed_kmh, lower_bound, upper_bound, risk_level, event_time,
-       kafka_partition, kafka_offset, kafka_timestamp
+       injection_id, kafka_partition, kafka_offset, kafka_timestamp
 FROM `driver.risk.events.anomaly`;
 
 INSERT INTO lake.fleet.delivery_performance_events
@@ -140,12 +145,12 @@ FROM `delivery.performance.events`;
 
 INSERT INTO lake.fleet.ai_maintenance_recommendations
 SELECT vehicle_id, geozone, severity, trigger_event, recommendation,
-       kafka_partition, kafka_offset, kafka_timestamp
+       injection_id, kafka_partition, kafka_offset, kafka_timestamp
 FROM `ai.maintenance.recommendations`;
 
 INSERT INTO lake.fleet.ai_safety_recommendations
 SELECT vehicle_id, geozone, risk_level, speed_kmh, recommendation,
-       kafka_partition, kafka_offset, kafka_timestamp
+       injection_id, kafka_partition, kafka_offset, kafka_timestamp
 FROM `ai.safety.recommendations`;
 
 INSERT INTO lake.fleet.ai_delivery_recommendations

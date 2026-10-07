@@ -69,6 +69,10 @@ computed with a Flink OVER window.
 `CREATE MODEL` with Flink's OpenAI provider, pointed at Ollama, and one
 `ML_PREDICT` per domain: every business event gets a one-sentence
 recommendation in `ai.*.recommendations`, about a second after the event.
+Events more than 2 minutes old when the job reaches them are skipped:
+freshness over completeness, so a job that fell behind (model server down,
+machine asleep) catches up at once instead of working through a stale
+backlog while new events wait.
 The prompts are built in SQL views; the safety prompt spells out which rule
 fired, because a small model given raw field values answers "reduce speed"
 to almost everything.
@@ -91,6 +95,12 @@ controls produce real records: *Inject engine spike* → maintenance alert →
 AI recommendation, usually within a second or two; *Inject speed anomaly*
 shows the fixed rule and the per-vehicle baseline side by side on the
 Safety tab. *Reset real pipeline* deletes every record in every topic.
+
+Recommendations caused by an injection are badged **Your injection** (or
+**Injected**, if another browser tab made it), so they stand out from the
+steady background traffic. That's real lineage, not a guess: each injected
+record carries an `injection_id` that Flink passes through to the business
+events and recommendations it produces (and into Iceberg).
 
 **Ask the live data** (chat button, bottom right). A local-LLM agent that
 answers by running SQL over the live topics through the MCP tools below,
@@ -168,6 +178,9 @@ next `make up`; the jobs are resubmitted and resume from their offsets.
 - **No Flink HA.** Anything that recreates the jobmanager (including
   rebuilding the Flink image) drops the running jobs until `flink-sql-init`
   runs again — `make up` does that.
+- **Recommendations aren't complete.** The AI job skips events older than 2
+  minutes (see above); after an outage, the events from that gap never get
+  a recommendation.
 - **At-least-once.** A job restart reprocesses up to one checkpoint (30 s)
   of input, so a few duplicate derived events and Iceberg rows are
   expected; `(kafka_partition, kafka_offset)` identifies them in Iceberg.

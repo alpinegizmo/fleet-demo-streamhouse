@@ -80,6 +80,11 @@ CREATE TABLE `vehicle.telemetry` (
     >>
   >,
   geozone_ids ARRAY<STRING>,
+  -- Set only on records produced by the console's inject buttons, and
+  -- carried through every derived topic below that descends from this one,
+  -- so a recommendation can be traced back to the injection that caused it.
+  -- NULL for everything else.
+  injection_id STRING,
   -- Event time, parsed from the record's own ISO-8601 `datetime`. The
   -- 1-second watermark delay tolerates the simulator stamping all 12
   -- vehicles with the same whole second on every tick.
@@ -162,6 +167,7 @@ CREATE TABLE `maintenance.alerts` (
   severity STRING,
   message STRING,
   event_time STRING,
+  injection_id STRING,
   kafka_partition INT METADATA FROM 'partition' VIRTUAL,
   kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
   kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
@@ -187,6 +193,7 @@ CREATE TABLE `driver.risk.events` (
   harsh_braking_score DOUBLE,
   risk_level STRING,
   event_time STRING,
+  injection_id STRING,
   kafka_partition INT METADATA FROM 'partition' VIRTUAL,
   kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
   kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
@@ -213,6 +220,7 @@ CREATE TABLE `driver.risk.events.anomaly` (
   upper_bound DOUBLE,
   risk_level STRING,
   event_time STRING,
+  injection_id STRING,
   kafka_partition INT METADATA FROM 'partition' VIRTUAL,
   kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
   kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
@@ -262,6 +270,7 @@ CREATE TABLE `ai.maintenance.recommendations` (
   severity STRING,
   trigger_event STRING,
   recommendation STRING,
+  injection_id STRING,
   kafka_partition INT METADATA FROM 'partition' VIRTUAL,
   kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
   kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL
@@ -285,6 +294,7 @@ CREATE TABLE `ai.safety.recommendations` (
   risk_level STRING,
   speed_kmh DOUBLE,
   recommendation STRING,
+  injection_id STRING,
   kafka_partition INT METADATA FROM 'partition' VIRTUAL,
   kafka_offset BIGINT METADATA FROM 'offset' VIRTUAL,
   kafka_timestamp TIMESTAMP_LTZ(3) METADATA FROM 'timestamp' VIRTUAL

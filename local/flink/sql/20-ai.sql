@@ -28,9 +28,20 @@ WITH (
   'max-tokens' = '60'
 );
 
+-- Freshness over completeness: each view only passes business events whose
+-- Kafka timestamp is under 2 minutes old when this job reaches them
+-- (CURRENT_TIMESTAMP is evaluated per record in streaming mode). The model
+-- server handles only a few calls a second, so if this job ever falls
+-- behind - the model server was down, the machine slept, the taskmanager
+-- was busy - it skips the stale backlog instead of working through hours of
+-- old events while new ones (and demo injections) wait at the back. A
+-- recommendation for a 17-hour-old harsh-braking event helps nobody.
+--
 -- ML_PREDICT takes a table and calls the model once per row on the columns
 -- named in DESCRIPTOR(...), so each domain's prompt is built in a view first.
--- The output row is the input row plus the model's OUTPUT columns.
+-- The output row is the input row plus the model's OUTPUT columns - which is
+-- how injection_id rides along from the business event to its
+-- recommendation without being part of the prompt.
 
 CREATE TEMPORARY VIEW maintenance_prompts AS
 SELECT
@@ -38,8 +49,10 @@ SELECT
   geozone,
   severity,
   message AS trigger_event,
+  injection_id,
   CONCAT('Fleet maintenance alert - ', message, '. In one short sentence, recommend the next maintenance action.') AS prompt
-FROM `maintenance.alerts`;
+FROM `maintenance.alerts`
+WHERE kafka_timestamp > CURRENT_TIMESTAMP - INTERVAL '2' MINUTE;
 
 -- The safety prompt spells out which rule fired, in words. Most of these
 -- events are harsh braking alone; given the raw fields ("speed 50km/h,
@@ -51,6 +64,7 @@ SELECT
   geozone,
   risk_level,
   speed_kmh,
+  injection_id,
   CONCAT('Driver safety alert for vehicle ', vehicle_id, ' in ', geozone, ': ',
          CASE
            WHEN overspeed_status = 'OVERSPEED' AND harsh_braking_score > 0.7
@@ -61,7 +75,8 @@ SELECT
          END,
          CAST(speed_kmh AS STRING), ' km/h. In one short sentence, recommend a safety action.') AS prompt
 FROM `driver.risk.events`
-WHERE risk_level IN ('high', 'medium');
+WHERE risk_level IN ('high', 'medium')
+  AND kafka_timestamp > CURRENT_TIMESTAMP - INTERVAL '2' MINUTE;
 
 CREATE TEMPORARY VIEW delivery_prompts AS
 SELECT
@@ -72,14 +87,15 @@ SELECT
   CONCAT('Delivery performance alert for vehicle ', vehicle_id, ' in ', geozone,
          ' - status ', performance_status, ', ', CAST(parcels_onboard AS STRING),
          ' parcels onboard. In one short sentence, recommend a delivery-ops action.') AS prompt
-FROM `delivery.performance.events`;
+FROM `delivery.performance.events`
+WHERE kafka_timestamp > CURRENT_TIMESTAMP - INTERVAL '2' MINUTE;
 
 -- Async calls, a few in flight at once, results emitted as they complete.
 EXECUTE STATEMENT SET
 BEGIN
 
 INSERT INTO `ai.maintenance.recommendations`
-SELECT vehicle_id, geozone, severity, trigger_event, recommendation
+SELECT vehicle_id, geozone, severity, trigger_event, recommendation, injection_id
 FROM ML_PREDICT(
   TABLE maintenance_prompts,
   MODEL fleet_ai_advisor,
@@ -87,7 +103,7 @@ FROM ML_PREDICT(
   MAP['async', 'true', 'max-concurrent-operations', '4', 'output-mode', 'ALLOW_UNORDERED']);
 
 INSERT INTO `ai.safety.recommendations`
-SELECT vehicle_id, geozone, risk_level, speed_kmh, recommendation
+SELECT vehicle_id, geozone, risk_level, speed_kmh, recommendation, injection_id
 FROM ML_PREDICT(
   TABLE safety_prompts,
   MODEL fleet_ai_advisor,
