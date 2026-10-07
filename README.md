@@ -243,6 +243,6 @@ current window, so the number falls as incidents age out.
 | `fleet-context-engine/` | the Node app — see its [`SETUP.md`](fleet-context-engine/SETUP.md) |
 | `fleet-intelligence-console.html`, `fonts/` | the console (served by `fleet-app`) |
 | `fleet-intelligence-deck.html` | presentation deck (open in a browser; arrow keys to navigate) |
-| `confluent-fleet-eda.skill` | Claude skill with this architecture and its decisions and gotchas — add it to a Claude Project or `~/.claude/skills/` so future sessions start with the context (source: `confluent-fleet-eda/`) |
+| `confluent-fleet-eda.skill` | Claude skill with this architecture and its decisions and gotchas — add it to a Claude Project or `~/.claude/skills/` so future sessions start with the context |
 | `docs/` | architecture diagram and screenshot |
 | `PLAN-local-docker.md` | how and why this was moved off Confluent Cloud |

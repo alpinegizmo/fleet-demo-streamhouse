@@ -24,3 +24,7 @@ npm-debug.log*
 **/*.auto.tfvars
 .rtce-credentials
 fleet-context-engine/.rtce-credentials
+
+# Unpacked copy of confluent-fleet-eda.skill for local editing - only the
+# packaged .skill is tracked
+confluent-fleet-eda/
