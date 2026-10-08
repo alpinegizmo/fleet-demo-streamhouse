@@ -682,6 +682,17 @@ async function refreshVehiclePopup(id){
   if (marker.isPopupOpen()) marker.setPopupContent(vehiclePopupHtml(latestVehicles.get(id) || v, rec));
 }
 
+// Vehicle ID labels: always shown for flagged (red / amber) vehicles, so the
+// ones worth talking about are named on the map; normal (blue) vehicles show
+// their ID only on hover - twelve permanent labels hid most of the map.
+const VEHICLE_NORMAL_COLOR = '#3587DA';
+function syncVehicleLabel(marker, id, flagged){
+  const tooltip = marker.getTooltip();
+  if (tooltip && tooltip.options.permanent === flagged) return;
+  if (tooltip) marker.unbindTooltip();
+  marker.bindTooltip(id, { permanent: flagged, direction:'top', offset:[0,-12], className:'truck-tooltip' });
+}
+
 function renderMap(vehicles){
   const seen = new Set();
   vehicles.forEach(v=>{
@@ -690,18 +701,19 @@ function renderMap(vehicles){
     latestVehicles.set(v.id, v);
     if (truckMarkers[v.id]?.isPopupOpen()) refreshVehiclePopup(v.id);
     const spiked = (v.engineTemp||0) > 100 || (v.maintRisk||0) > 85;
-    const fillColor = spiked ? '#DC1928' : ((v.driverRisk||0) > 70 ? '#EDA51F' : '#3587DA');
+    const fillColor = spiked ? '#DC1928' : ((v.driverRisk||0) > 70 ? '#EDA51F' : VEHICLE_NORMAL_COLOR);
     const direction = v.direction || 0;
     let marker = truckMarkers[v.id];
     if (!marker){
       marker = L.marker([v.lat, v.lng], { icon: vehicleIcon(direction, fillColor, spiked) }).addTo(leafletMap);
-      marker.bindTooltip(v.id, { permanent:true, direction:'top', offset:[0,-12], className:'truck-tooltip' });
+      syncVehicleLabel(marker, v.id, fillColor !== VEHICLE_NORMAL_COLOR);
       marker.bindPopup('', { className:'vehicle-popup', offset:[0,-6], minWidth:260, maxWidth:300, autoPanPadding:[24,24] });
       marker.on('popupopen', () => refreshVehiclePopup(v.id));
       truckMarkers[v.id] = marker;
       markerAnimState[v.id] = { direction, rafId: null, fillColor, spiked };
       return; // nothing to animate from on first sighting
     }
+    syncVehicleLabel(marker, v.id, fillColor !== VEHICLE_NORMAL_COLOR);
     const state = markerAnimState[v.id];
     if (state && (state.fillColor !== fillColor || state.spiked !== spiked)){
       marker.setIcon(vehicleIcon(state.direction ?? direction, fillColor, spiked));
