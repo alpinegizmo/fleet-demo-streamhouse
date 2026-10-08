@@ -518,8 +518,8 @@ class LiveContextEngine {
     return list.filter((v) => v.driverRisk > 70 || v.maintRisk > 70);
   }
 
-  async getRecentRecommendations(domain, limit = 10) {
-    const filtered = domain ? this.recommendations.filter((r) => r.domain === domain) : this.recommendations;
+  async getRecentRecommendations(domain, limit = 10, vehicleId) {
+    const filtered = this.recommendations.filter((r) => (!domain || r.domain === domain) && (!vehicleId || r.vehicleId === vehicleId));
     return filtered.slice(0, limit);
   }
 
@@ -973,8 +973,8 @@ class SimulatedContextEngine {
     return list.filter((v) => v.driverRisk > 70 || v.maintRisk > 70);
   }
 
-  async getRecentRecommendations(domain, limit = 10) {
-    const filtered = domain ? this.recommendations.filter((r) => r.domain === domain) : this.recommendations;
+  async getRecentRecommendations(domain, limit = 10, vehicleId) {
+    const filtered = this.recommendations.filter((r) => (!domain || r.domain === domain) && (!vehicleId || r.vehicleId === vehicleId));
     return filtered.slice(0, limit);
   }
 

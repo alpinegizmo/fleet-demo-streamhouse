@@ -120,6 +120,19 @@
   .rec .conf{color:var(--green);}
   /* A recommendation caused by a demo injection (it carries the injection_id
      the pipeline propagated) - stands out from the steady background traffic. */
+  /* Vehicle popup on the map (click a vehicle) */
+  .vehicle-popup .leaflet-popup-content{margin:12px 14px;font-family:var(--font-body);font-size:12px;line-height:1.4;color:var(--ink);}
+  .vpop-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:8px;}
+  .vpop-head b{font-size:14px;}
+  .vpop-head span{font-family:var(--font-mono);font-size:10.5px;color:var(--steel);}
+  .vpop-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;margin-bottom:8px;}
+  .vpop-grid div{display:flex;justify-content:space-between;gap:8px;}
+  .vpop-grid span{color:var(--steel);}
+  .vpop-grid .risk-high{color:var(--red);} .vpop-grid .risk-medium{color:var(--amber);}
+  .vpop-weather{color:var(--steel);margin-bottom:8px;}
+  .vpop-rec{border-top:1px solid var(--line);padding-top:8px;}
+  .vpop-rec .meta{font-family:var(--font-mono);font-size:10px;color:var(--steel);margin-bottom:3px;}
+  .vpop-foot{font-family:var(--font-mono);font-size:10px;color:var(--steel);margin-top:8px;}
   .rec.injected{border-left-color:var(--purple);background:#F1EDFC;box-shadow:inset 0 0 0 1px #DDD4F8;}
   .inj-badge{display:inline-block;font-family:var(--font-mono);font-size:9.5px;font-weight:600;letter-spacing:.06em;
     text-transform:uppercase;color:#fff;background:var(--purple);border-radius:3px;padding:1px 6px;margin-right:6px;}
@@ -590,11 +603,60 @@ function animateMarkerTo(id, marker, toLat, toLng, toDirection){
   markerAnimState[id] = { ...state, direction: fromDirection, rafId: requestAnimationFrame(step) };
 }
 
+/* ---------- vehicle popup ----------
+   Click a vehicle on the map: its latest telemetry and business state from
+   the same poll that moves the markers, plus its most recent AI
+   recommendation (fetched per vehicle - the feeds only hold the newest few
+   dozen fleet-wide). An open popup refreshes with every poll. */
+const latestVehicles = new Map();
+function riskLabel(score){
+  if ((score||0) >= 85) return 'high';
+  if ((score||0) >= 60) return 'medium';
+  if ((score||0) > 0) return 'low';
+  return 'none';
+}
+function fmt(value, digits, unit){
+  return value == null ? '—' : Number(value).toFixed(digits) + unit;
+}
+function vehiclePopupHtml(v, rec){
+  const w = v.currentWeather;
+  const weather = w ? `${escapeHtml(w.condition)} · ${fmt(w.tempC, 0, '°C')} · wind ${fmt(w.windKph, 0, ' km/h')}` : 'no recent report';
+  const driver = riskLabel(v.driverRisk), maint = riskLabel(v.maintRisk);
+  const recHtml = rec
+    ? `<div class="meta">${rec.injectionId ? `<span class="inj-badge">${myInjectionIds.has(rec.injectionId) ? 'Your injection' : 'Injected'}</span>` : ''}${DOMAIN_LABELS[rec.domain] || rec.domain} · ${new Date(rec.timestamp).toLocaleTimeString('en-AU', {hour12:false})}</div>${escapeHtml(rec.text)}`
+    : '<div class="meta">AI advisor</div>No recent recommendation for this vehicle.';
+  const reported = v.datetime ? new Date(v.datetime).toLocaleTimeString('en-AU', {hour12:false}) : '—';
+  return `<div class="vpop">
+    <div class="vpop-head"><b>${escapeHtml(v.id)}</b><span>${escapeHtml(v.geozone || '')}</span></div>
+    <div class="vpop-grid">
+      <div><span>Speed</span><b>${fmt(v.speed, 0, ' km/h')}</b></div>
+      <div><span>Engine</span><b>${fmt(v.engineTemp, 0, '°C')}</b></div>
+      <div><span>Fuel</span><b>${fmt(v.fuel, 0, '%')}</b></div>
+      <div><span>Parcels</span><b>${v.parcelsOnboard ?? '—'}</b></div>
+      <div><span>Driver risk</span><b class="risk-${driver}">${driver}</b></div>
+      <div><span>Maint. risk</span><b class="risk-${maint}">${maint}</b></div>
+    </div>
+    <div class="vpop-weather">Weather: ${weather}</div>
+    <div class="vpop-rec">${recHtml}</div>
+    <div class="vpop-foot">Last report ${reported}</div>
+  </div>`;
+}
+async function refreshVehiclePopup(id){
+  const v = latestVehicles.get(id);
+  const marker = truckMarkers[id];
+  if (!v || !marker) return;
+  let rec = null;
+  try { [rec] = await liveFetch('/api/recommendations?vehicleId=' + encodeURIComponent(id) + '&limit=1'); } catch { /* show the vehicle without it */ }
+  if (marker.isPopupOpen()) marker.setPopupContent(vehiclePopupHtml(latestVehicles.get(id) || v, rec));
+}
+
 function renderMap(vehicles){
   const seen = new Set();
   vehicles.forEach(v=>{
     if (v.lat == null || v.lng == null) return;
     seen.add(v.id);
+    latestVehicles.set(v.id, v);
+    if (truckMarkers[v.id]?.isPopupOpen()) refreshVehiclePopup(v.id);
     const spiked = (v.engineTemp||0) > 100 || (v.maintRisk||0) > 85;
     const fillColor = spiked ? '#DC1928' : ((v.driverRisk||0) > 70 ? '#EDA51F' : '#3587DA');
     const direction = v.direction || 0;
@@ -602,6 +664,8 @@ function renderMap(vehicles){
     if (!marker){
       marker = L.marker([v.lat, v.lng], { icon: vehicleIcon(direction, fillColor, spiked) }).addTo(leafletMap);
       marker.bindTooltip(v.id, { permanent:true, direction:'top', offset:[0,-12], className:'truck-tooltip' });
+      marker.bindPopup('', { className:'vehicle-popup', offset:[0,-6], minWidth:260, maxWidth:300, autoPanPadding:[24,24] });
+      marker.on('popupopen', () => refreshVehiclePopup(v.id));
       truckMarkers[v.id] = marker;
       markerAnimState[v.id] = { direction, rafId: null, fillColor, spiked };
       return; // nothing to animate from on first sighting
@@ -620,6 +684,7 @@ function renderMap(vehicles){
       delete markerAnimState[id];
       leafletMap.removeLayer(truckMarkers[id]);
       delete truckMarkers[id];
+      latestVehicles.delete(id);
     }
   });
 }

@@ -62,7 +62,7 @@ All `GET` unless noted; the console polls these every ~3 s.
 | `/api/health` | `{ ok, mode }` |
 | `/api/fleet-summary` | the KPI tiles |
 | `/api/vehicles`, `/api/high-risk?domain=` | per-vehicle state |
-| `/api/recommendations?domain=&limit=` | AI recommendations (newest 200 per domain kept) |
+| `/api/recommendations?domain=&vehicleId=&limit=` | AI recommendations, optionally for one domain and/or vehicle (newest 200 per domain kept) |
 | `/api/weather`, `/api/traffic-incidents`, `/api/parcel-volume` | context topics |
 | `/api/maintenance-alerts`, `/api/driver-risk-events`, `/api/driver-risk-events-anomaly`, `/api/risk-comparison` | business events |
 | `/api/pipeline-events?since=` | Behind the Scenes animation feed |

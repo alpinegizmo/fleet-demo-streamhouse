@@ -119,8 +119,9 @@ export function startHttpServer(port = process.env.PORT || process.env.HTTP_PORT
       }
       if (req.method === 'GET' && url.pathname === '/api/recommendations') {
         const domain = url.searchParams.get('domain') || undefined;
+        const vehicleId = url.searchParams.get('vehicleId') || undefined;
         const limit = Number(url.searchParams.get('limit')) || 20;
-        return sendJson(res, 200, await contextEngine.getRecentRecommendations(domain, limit));
+        return sendJson(res, 200, await contextEngine.getRecentRecommendations(domain, limit, vehicleId));
       }
       if (req.method === 'GET' && url.pathname === '/api/weather') {
         const geozone = url.searchParams.get('geozone') || undefined;
