@@ -69,7 +69,6 @@
   .navitem:hover{background:var(--panel-light);}
   .navitem.active{background:var(--panel-light);border-color:var(--line);color:var(--ink);}
   .navitem .sw{width:8px;height:8px;border-radius:2px;flex-shrink:0;}
-  .navitem .count{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--steel);}
 
   /* Main */
   .main{padding:18px 22px;overflow-y:auto;}
@@ -188,10 +187,10 @@
   <div class="side">
     <div class="navlabel">Views</div>
     <div class="navitem active" data-view="overview"><span class="sw" style="background:var(--blue)"></span>Live Overview</div>
-    <div class="navitem" data-view="safety"><span class="sw" style="background:var(--red)"></span>Safety<span class="count" id="count-safety">0</span></div>
-    <div class="navitem" data-view="delivery"><span class="sw" style="background:var(--green)"></span>Delivery Ops<span class="count" id="count-delivery">0</span></div>
-    <div class="navitem" data-view="maintenance"><span class="sw" style="background:var(--amber)"></span>Maintenance<span class="count" id="count-maintenance">0</span></div>
-    <div class="navitem" data-view="live"><span class="sw" style="background:var(--purple)"></span>Live Pipeline<span class="count" id="count-live">0</span></div>
+    <div class="navitem" data-view="safety"><span class="sw" style="background:var(--red)"></span>Safety</div>
+    <div class="navitem" data-view="delivery"><span class="sw" style="background:var(--green)"></span>Delivery Ops</div>
+    <div class="navitem" data-view="maintenance"><span class="sw" style="background:var(--amber)"></span>Maintenance</div>
+    <div class="navitem" data-view="live"><span class="sw" style="background:var(--purple)"></span>Live Pipeline</div>
     <div class="navitem" data-view="behindscenes"><span class="sw" style="background:var(--green)"></span>Behind the Scenes</div>
     <div class="navlabel" style="margin-top:14px;">Background traffic</div>
     <div style="padding:2px 10px 6px;">
@@ -216,12 +215,7 @@
     <!-- OVERVIEW -->
     <div class="view active" id="view-overview">
       <h1 class="pagehead">Live Overview</h1>
-      <p class="sub">One raw event stream — vehicle.telemetry — feeding three independent business consumers. No dashboard here talks to any other.</p>
-
-      <div class="ticker-wrap">
-        <div class="ticker-label">RAW EVENTS</div>
-        <div class="ticker" id="ticker"></div>
-      </div>
+      <p class="sub">Where the fleet stands right now: vehicles on the road, deliveries at risk, and what the AI advisor recommends.</p>
 
       <!-- Trace strip: shows one injected event's real journey through the
            pipeline (raw -> Flink-derived -> AI reasoning -> live) instead of
@@ -237,9 +231,7 @@
 
       <div class="grid grid-overview">
         <div class="card"><div class="lbl">Vehicles online</div><div class="val" id="kpi-vehicles">—</div><div class="delta up" id="kpi-vehicles-delta">connecting…</div></div>
-        <div class="card"><div class="lbl">Events / sec</div><div class="val" id="kpi-eps">—</div><div class="delta">measured, all topics</div></div>
-        <div class="card"><div class="lbl">Open AI recommendations</div><div class="val" id="kpi-recs">0</div><div class="delta warn" id="kpi-recs-delta">—</div></div>
-        <div class="card"><div class="lbl">Avg parcels delivered/hr</div><div class="val" id="kpi-eta">—</div><div class="delta">fleet-wide, delivery.performance.events</div></div>
+        <div class="card"><div class="lbl">Avg parcels delivered/hr</div><div class="val" id="kpi-eta">—</div><div class="delta">fleet-wide, recent deliveries</div></div>
         <div class="card"><div class="lbl">Recent impacted deliveries</div><div class="val" id="kpi-impacted-deliveries">0</div><div class="delta warn" id="kpi-impacted-deliveries-delta">parcels at risk, recent incidents</div></div>
         <div class="card"><div class="lbl">Recent impacted revenue</div><div class="val" id="kpi-impacted-revenue">$0</div><div class="delta warn">est. @ $14.50/parcel</div></div>
       </div>
@@ -256,7 +248,7 @@
       </div>
 
       <div class="feedcard" style="height:auto;margin-top:14px;">
-        <h3>Network conditions <span style="font-size:10px;color:var(--steel);font-weight:400;">weather.conditions · traffic.incidents</span></h3>
+        <h3>Network conditions <span style="font-size:10px;color:var(--steel);font-weight:400;">weather and traffic by area</span></h3>
         <table>
           <thead><tr><th>Geozone</th><th>Weather</th><th>Traffic</th></tr></thead>
           <tbody id="network-conditions"></tbody>
@@ -370,18 +362,22 @@
     <!-- LIVE PIPELINE -->
     <div class="view" id="view-live">
       <h1 class="pagehead">Live Pipeline</h1>
-      <p class="sub">Raw diagnostics for the same pipeline every dashboard in this console now reads from — connection state, pipeline mode/source, and the unfiltered recommendation stream across all three domains (<b>fleet-context-engine</b>'s HTTP API, backed by the real local Kafka + Flink + LLM pipeline in <code>docker-compose.yml</code>).</p>
+      <p class="sub">Raw diagnostics for the same pipeline every dashboard in this console now reads from — connection state, pipeline mode/source, the raw event stream, and the unfiltered recommendation stream across all three domains (<b>fleet-context-engine</b>'s HTTP API, backed by the real local Kafka + Flink + LLM pipeline in <code>docker-compose.yml</code>).</p>
 
       <div id="live-status" class="feedcard" style="height:auto;flex-direction:row;align-items:center;gap:10px;margin-bottom:14px;">
         <span class="dot" id="live-dot" style="background:var(--steel);animation:none;"></span>
         <span id="live-status-text" style="font-family:var(--font-mono);font-size:12px;color:var(--steel);">Connecting…</span>
       </div>
 
-      <div class="grid">
+      <div class="ticker-wrap">
+        <div class="ticker-label">RAW EVENTS</div>
+        <div class="ticker" id="ticker"></div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:repeat(3,1fr);">
         <div class="card"><div class="lbl">Vehicles reporting</div><div class="val" id="live-vehicles">—</div><div class="delta" id="live-source">—</div></div>
         <div class="card"><div class="lbl">Avg engine temp</div><div class="val" id="live-temp">—</div></div>
         <div class="card"><div class="lbl">High risk (safety+maint)</div><div class="val" id="live-risk">—</div><div class="delta warn">threshold: risk &gt; 70</div></div>
-        <div class="card"><div class="lbl">Open AI recommendations</div><div class="val" id="live-recs">—</div><div class="delta" id="live-recs-delta">real <span class="llm-model">local LLM</span> output</div></div>
       </div>
 
       <div class="feedcard" style="height:auto;">
@@ -405,6 +401,10 @@
             <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--green)"></span>Serve / Iceberg</div>
             <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--purple)"></span>Agent (MCP)</div>
             <div class="bts-legend-row"><span class="bts-swatch" style="background:var(--red-dim)"></span>DuckDB</div>
+          </section>
+          <section>
+            <h3>Throughput</h3>
+            <div class="bts-stat-row"><span>Events / sec (all topics)</span><span class="v" id="bts-eps">—</span></div>
           </section>
           <section>
             <h3>Cumulative hops</h3>
@@ -649,7 +649,10 @@ function feedSeverityClass(severity){
   if (severity === 'medium' || severity === 'med') return 'med';
   return '';
 }
-function renderFeed(elId, recs){
+// Home page feed labels: the business domain rather than the Kafka topic
+// (Live Pipeline and the domain tabs keep the topic names).
+const DOMAIN_LABELS = { safety: 'Safety', delivery: 'Delivery', maintenance: 'Maintenance' };
+function renderFeed(elId, recs, {businessLabels = false} = {}){
   const feed = document.getElementById(elId);
   if (!feed || !recs) return;
   feed.innerHTML = '';
@@ -672,7 +675,8 @@ function renderFeed(elId, recs){
     const badge = r.injectionId
       ? `<span class="inj-badge">${myInjectionIds.has(r.injectionId) ? 'Your injection' : 'Injected'}</span>`
       : '';
-    div.innerHTML = `<div class="meta"><span>${badge}ai.${r.domain}.recommendations · ${r.vehicleId||''}</span><span class="conf">${when}</span></div>${r.text}`;
+    const source = businessLabels ? (DOMAIN_LABELS[r.domain] || r.domain) : `ai.${r.domain}.recommendations`;
+    div.innerHTML = `<div class="meta"><span>${badge}${source} · ${r.vehicleId||''}</span><span class="conf">${when}</span></div>${r.text}`;
     feed.appendChild(div);
   });
 }
@@ -856,23 +860,12 @@ function animateNumber(id, targetText){
 function renderOverview(summary, vehicles, weatherList, trafficIncidents, recs){
   animateNumber('kpi-vehicles', summary.vehiclesOnline ?? '—');
   document.getElementById('kpi-vehicles-delta').textContent = 'reporting';
-  animateNumber('kpi-eps', summary.eventsPerSecond ?? '—');
-  const counts = summary.recommendationCounts || {};
-  const openRecs = (counts.safety||0) + (counts.delivery||0) + (counts.maintenance||0);
-  animateNumber('kpi-recs', openRecs);
-  document.getElementById('kpi-recs-delta').textContent = openRecs ? `safety ${counts.safety||0} · delivery ${counts.delivery||0} · maint ${counts.maintenance||0}` : '—';
   animateNumber('kpi-eta', summary.avgParcelsDeliveredPerHour != null ? summary.avgParcelsDeliveredPerHour.toFixed(1) + '/hr' : '—');
 
   updateImpactKPIs(vehicles, trafficIncidents);
   renderMap(vehicles);
-  updateTicker(vehicles);
   renderNetworkConditions(weatherList, trafficIncidents);
-  renderFeed('feed-overview', recs);
-
-  document.getElementById('count-safety').textContent = counts.safety || 0;
-  document.getElementById('count-delivery').textContent = counts.delivery || 0;
-  document.getElementById('count-maintenance').textContent = counts.maintenance || 0;
-  document.getElementById('count-live').textContent = summary.openRecommendations ?? 0;
+  renderFeed('feed-overview', recs, {businessLabels: true});
 }
 
 function renderSafety(summary, vehicles, recs, riskHeuristic, riskAnomaly, riskComparison){
@@ -921,12 +914,12 @@ function renderMaintenance(summary, vehicles, recs){
   renderFeed('feed-maintenance', recs);
 }
 
-function renderLivePipeline(summary, recs){
+function renderLivePipeline(summary, recs, vehicles){
   animateNumber('live-vehicles', summary.vehiclesOnline ?? '—');
   document.getElementById('live-source').textContent = summary.source || '—';
   animateNumber('live-temp', summary.avgEngineTempC != null ? summary.avgEngineTempC.toFixed(1) + '°C' : '—');
   animateNumber('live-risk', (summary.highDriverRiskCount||0) + (summary.highMaintenanceRiskCount||0));
-  animateNumber('live-recs', summary.openRecommendations ?? '—');
+  updateTicker(vehicles);
   renderFeed('feed-live', recs);
 }
 
@@ -954,7 +947,8 @@ async function poll(){
     renderSafety(summary, vehicles, recsSafety, riskHeuristic, riskAnomaly, riskComparison);
     renderDelivery(summary, vehicles, recsDelivery);
     renderMaintenance(summary, vehicles, recsMaintenance);
-    renderLivePipeline(summary, recsAll);
+    renderLivePipeline(summary, recsAll, vehicles);
+    animateNumber('bts-eps', summary.eventsPerSecond ?? '—');
     checkTraceProgress(recsMaintenance);
     lastPollTime = Date.now();
     tickFreshness();
