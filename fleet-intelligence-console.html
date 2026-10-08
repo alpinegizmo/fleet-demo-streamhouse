@@ -171,8 +171,8 @@
   .bts-eventlog{background:var(--panel);border:1px solid var(--line);border-radius:10px;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
   .bts-eventlog-header{padding:8px 14px;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--steel);border-bottom:1px solid var(--line);flex-shrink:0;}
   .bts-eventlog-body{overflow-y:auto;padding:2px 0;font-family:var(--font-mono);font-size:11px;flex:1;}
-  .bts-eventlog-row{display:grid;grid-template-columns:120px 1fr;gap:10px;padding:3px 14px;border-left:3px solid transparent;color:var(--steel);}
-  .bts-eventlog-row .node-tag{color:var(--ink);font-weight:600;}
+  .bts-eventlog-row{display:grid;grid-template-columns:62px 132px 1fr;gap:10px;padding:3px 14px;border-left:3px solid transparent;color:var(--steel);}
+  .bts-eventlog-row .node-tag{color:var(--ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 </style>
 </head>
 <body>
@@ -1376,9 +1376,16 @@ function btsAppendEventLog(ev){
   if (!body) return;
   const row = document.createElement('div');
   row.className = 'bts-eventlog-row';
+  row.dataset.id = ev.id;
   const when = new Date(ev.ts).toLocaleTimeString('en-AU', {hour12:false});
-  row.innerHTML = `<span>${when} <span class="node-tag">${ev.node}</span></span><span>${ev.detail || ''}</span>`;
-  body.insertBefore(row, body.firstChild);
+  const label = BTS_NODES[ev.node]?.label || ev.node;
+  row.innerHTML = `<span>${when}</span><span class="node-tag">${label}</span><span>${ev.detail || ''}</span>`;
+  // Newest first, by event id. Rows are added as the animation plays (90 ms
+  // apart per poll batch), and a long batch can still be playing when the
+  // next poll's batch starts - inserting at the top interleaved them out of
+  // order.
+  const older = [...body.children].find(r => Number(r.dataset.id) < ev.id);
+  body.insertBefore(row, older || null);
   while (body.children.length > 80) body.removeChild(body.lastChild);
 }
 
