@@ -87,6 +87,18 @@ async function readJsonBody(req) {
 
 // PORT or HTTP_PORT override the listening port (the Dockerfile sets PORT);
 // 8787 is the default. docker-compose.yml maps it to APP_PORT on the host.
+// Current Flink job IDs by name (fleet-business, fleet-ai, fleet-lakehouse),
+// for the console's links straight to a job in the Flink UI - the IDs change
+// every time a job is resubmitted.
+async function getFlinkJobs() {
+  const base = process.env.FLINK_REST_URL;
+  if (!base) return { jobs: {} };
+  const resp = await fetch(`${base}/jobs/overview`, { signal: AbortSignal.timeout(3000) });
+  if (!resp.ok) throw new Error(`Flink REST API returned ${resp.status}`);
+  const { jobs } = await resp.json();
+  return { jobs: Object.fromEntries(jobs.filter((j) => j.state === 'RUNNING').map((j) => [j.name, j.jid])) };
+}
+
 export function startHttpServer(port = process.env.PORT || process.env.HTTP_PORT || 8787) {
   const server = http.createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
@@ -173,6 +185,9 @@ export function startHttpServer(port = process.env.PORT || process.env.HTTP_PORT
           return sendJson(res, 400, { error: 'Missing "conversation" array in request body.' });
         }
         return sendJson(res, 200, await askAboutFleetData(conversation));
+      }
+      if (req.method === 'GET' && url.pathname === '/api/flink-jobs') {
+        return sendJson(res, 200, await getFlinkJobs());
       }
       if (req.method === 'GET' && url.pathname === '/api/simulator') {
         return sendJson(res, 200, getSimulatorState());

@@ -13,7 +13,8 @@
 #
 #   docker compose up --build        # then open http://localhost:8787 (or $APP_PORT)
 #                                    # Flink UI: http://localhost:8081
-#                                    # object store console: http://localhost:9001
+#                                    # Kafka UI: http://localhost:8080
+#                                    # object store console: http://localhost:9001/rustfs/console/
 #   docker compose run --rm duckdb   # SQL shell on the Iceberg tables
 #   docker compose down -v           # stop and delete all data
 
@@ -204,6 +205,21 @@ services:
       iceberg-rest: { condition: service_healthy }
       flink-taskmanager: { condition: service_started }
 
+  # Web UI for Kafka (Kafbat UI): topics, messages, consumer groups and lag.
+  # Read-only, so nothing can be deleted or produced from it mid-demo.
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.5.0
+    depends_on:
+      kafka-init: { condition: service_completed_successfully }
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: fleet
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_READONLY: "true"
+      DYNAMIC_CONFIG_ENABLED: "false"
+      JAVA_OPTS: -Xmx384m
+
   seed:
     build: .
     depends_on:
@@ -228,6 +244,7 @@ services:
       # prompt, 7b skipped the tools and invented answers; 3b queries reliably.
       CHAT_MODEL: ${CHAT_MODEL:-qwen2.5:3b}
       ICEBERG_REST_URL: http://iceberg-rest:8181   # Behind the Scenes tab watches Iceberg commits
+      FLINK_REST_URL: http://flink-jobmanager:8081   # job IDs for the console's links into the Flink UI
       SIM_PACE: ${SIM_PACE:-normal}   # starting pace: normal | slow | minimal (console switch changes it live)
       # AUTO_TELEMETRY: "false"   # stop the continuous simulator
     restart: unless-stopped

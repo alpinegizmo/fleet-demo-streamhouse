@@ -61,6 +61,11 @@
   .trace-dot-active{background:var(--purple);box-shadow:0 0 0 0 rgba(125,95,222,.55);animation:tracePulse 1.3s infinite;}
   @keyframes tracePulse{0%{box-shadow:0 0 0 0 rgba(125,95,222,.55);}70%{box-shadow:0 0 0 7px rgba(125,95,222,0);}100%{box-shadow:0 0 0 0 rgba(125,95,222,0);}}
   .clock{font-family:var(--font-mono);font-size:12px;color:var(--steel);}
+  /* Links out to the underlying systems' own web UIs (top bar) */
+  .topbar-right{display:flex;align-items:center;gap:18px;}
+  .tools{display:flex;gap:12px;font-size:12px;}
+  .tools a{color:var(--steel);text-decoration:none;white-space:nowrap;}
+  .tools a:hover{color:var(--ink);text-decoration:underline;}
 
   /* Sidebar */
   .side{background:var(--panel);border-right:1px solid var(--line);padding:16px 10px;display:flex;flex-direction:column;gap:4px;}
@@ -186,6 +191,8 @@
   .bts-nodes{position:absolute;inset:0;}
   .bts-node{position:absolute;display:flex;flex-direction:column;justify-content:center;gap:.25cqw;padding:.5cqw .9cqw;overflow:hidden;background:var(--panel);border:1px solid var(--node-color);border-radius:8px;transition:box-shadow .15s ease-out, transform .15s ease-out;opacity:.8;}
   .bts-node.static{opacity:.6;}
+  .bts-node.link{cursor:pointer;}
+  .bts-node.link .lbl::after{content:'\00a0↗';font-weight:400;opacity:.55;}
   .bts-node.active{opacity:1;transform:scale(1.035);box-shadow:0 0 16px color-mix(in srgb, var(--node-color) 55%, transparent);}
   .bts-node .lbl{font-size:1cqw;font-weight:700;line-height:1.2;color:var(--node-color);}
   .bts-node .sub{font-size:.8cqw;color:var(--steel);line-height:1.35;white-space:pre-line;}
@@ -208,7 +215,14 @@
   <div class="topbar">
     <div class="brand"><div class="mark">P</div>Fleet Intelligence Console</div>
     <div class="status"><span class="dot" id="topbar-dot"></span> <span id="topbar-status-text">Connecting to fleet-context-engine…</span></div>
-    <div class="clock" id="clock">--:--:--</div>
+    <div class="topbar-right">
+      <nav class="tools" aria-label="Pipeline tools">
+        <a id="tool-flink" target="_blank" rel="noopener" title="Apache Flink web UI: jobs, checkpoints, backpressure">Flink UI ↗</a>
+        <a id="tool-kafka" target="_blank" rel="noopener" title="Kafbat UI: topics, messages, consumer groups and lag">Kafka UI ↗</a>
+        <a id="tool-files" target="_blank" rel="noopener" title="RustFS console: the Iceberg tables' files in the object store">Object store ↗</a>
+      </nav>
+      <div class="clock" id="clock">--:--:--</div>
+    </div>
   </div>
 
   <div class="side">
@@ -1416,6 +1430,38 @@ const BTS_EDGES = (() => {
   };
 })();
 
+/* ---------- links out to the underlying systems' web UIs ----------
+   Same host as this console, on the ports docker-compose.yml publishes.
+   Flink job IDs change on every resubmit, so they're looked up by job name
+   (/api/flink-jobs) and kept fresh in the background - a click has to open
+   the tab synchronously, or browsers treat it as a popup and block it. */
+const TOOL_HOST = location.hostname || 'localhost';
+const TOOL_URLS = {
+  flink: `http://${TOOL_HOST}:8081/`,
+  kafka: `http://${TOOL_HOST}:8080/ui/clusters/fleet/all-topics`,
+  files: `http://${TOOL_HOST}:9001/rustfs/console/`,
+};
+document.getElementById('tool-flink').href = TOOL_URLS.flink;
+document.getElementById('tool-kafka').href = TOOL_URLS.kafka;
+document.getElementById('tool-files').href = TOOL_URLS.files;
+
+let flinkJobIds = {};
+async function refreshFlinkJobIds(){
+  try { flinkJobIds = (await liveFetch('/api/flink-jobs')).jobs || {}; } catch { /* keep the last known IDs */ }
+}
+refreshFlinkJobIds();
+setInterval(refreshFlinkJobIds, 15000);
+function flinkJobUrl(name){
+  const jid = flinkJobIds[name];
+  return jid ? `${TOOL_URLS.flink}#/job/running/${jid}/overview` : `${TOOL_URLS.flink}#/job/running`;
+}
+const BTS_NODE_LINKS = {
+  kafka:         { title: 'Open the topics in Kafka UI', url: () => TOOL_URLS.kafka },
+  flinkBusiness: { title: 'Open the fleet-business job in the Flink UI', url: () => flinkJobUrl('fleet-business') },
+  flinkAi:       { title: 'Open the fleet-ai job in the Flink UI', url: () => flinkJobUrl('fleet-ai') },
+  tableflow:     { title: "Open the Iceberg tables' files in the object store", url: () => TOOL_URLS.files },
+};
+
 function btsRenderStatic(){
   const svg = document.getElementById('bts-edges-svg');
   const govRect = `<rect class="bts-gov-band" x="${btsGov.x}" y="${btsGov.y}" width="${btsGov.w}" height="${btsGov.h}" rx="10"></rect>
@@ -1428,11 +1474,15 @@ function btsRenderStatic(){
   document.getElementById('bts-nodes').innerHTML = Object.entries(BTS_NODES).map(([id, n]) => {
     const color = BTS_KIND_COLOR[n.kind] || 'steel';
     const style = `left:${(n.x / BTS_W) * 100}%;top:${(n.y / BTS_H) * 100}%;width:${(n.w / BTS_W) * 100}%;height:${(n.h / BTS_H) * 100}%;--node-color:var(--${color});`;
-    return `<div class="bts-node${n.static ? ' static' : ''}" id="bts-node-${id}" style="${style}">
+    const link = BTS_NODE_LINKS[id];
+    return `<div class="bts-node${n.static ? ' static' : ''}${link ? ' link' : ''}" id="bts-node-${id}" style="${style}"${link ? ` title="${link.title}"` : ''}>
       <span class="lbl">${n.label}</span>
       <span class="sub">${n.sub}</span>
     </div>`;
   }).join('');
+  Object.entries(BTS_NODE_LINKS).forEach(([id, link]) => {
+    document.getElementById('bts-node-' + id)?.addEventListener('click', () => window.open(link.url(), '_blank', 'noopener'));
+  });
 }
 btsRenderStatic();
 

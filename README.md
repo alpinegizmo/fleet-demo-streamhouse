@@ -42,7 +42,8 @@ data; `make reset` also deletes the data.
 |---|---|---|
 | `kafka` | Apache Kafka 4.3, single KRaft node, 11 topics (plain JSON, no schema registry) | `localhost:9094` from the host |
 | `flink-jobmanager`, `flink-taskmanager` | Apache Flink 2.2 running three SQL jobs: `fleet-business`, `fleet-ai`, `fleet-lakehouse` | Flink UI: http://localhost:8081 |
-| `objectstore` | RustFS, S3-compatible storage for the Iceberg tables | console: http://localhost:9001 (`fleet` / `fleet-secret`) |
+| `objectstore` | RustFS, S3-compatible storage for the Iceberg tables | console: http://localhost:9001/rustfs/console/ (`fleet` / `fleet-secret`) |
+| `kafka-ui` | Kafbat UI (read-only): topics, messages, consumer groups and lag | http://localhost:8080 |
 | `iceberg-rest` | Iceberg REST catalog (the Iceberg project's reference server) | http://localhost:8181 |
 | `fleet-app` | `fleet-context-engine`: Kafka consumer, telemetry simulator, HTTP API, the console, the MCP server | http://localhost:8787 (console), `/mcp` (MCP) |
 | one-shot | `kafka-init` (topics), `objectstore-init` (bucket), `seed` (backfill), `flink-sql-init` (submits the SQL jobs) | |
@@ -90,8 +91,11 @@ schema registry, that DDL *is* the schema contract.
 **The console** (http://localhost:8787). Live Overview, the three business
 dashboards (Safety, Delivery Ops, Maintenance), Live Pipeline (raw
 diagnostics), and Behind the Scenes (an animated diagram driven by real
-topic arrivals, real Iceberg commits and real agent queries). Demo
-controls produce real records: *Inject engine spike* → maintenance alert →
+topic arrivals, real Iceberg commits and real agent queries). The top bar
+links out to the systems' own web UIs — Flink UI, Kafka UI (Kafbat) and the
+object store console — and on Behind the Scenes the Kafka, Flink and Iceberg
+boxes are clickable too: each Flink box opens *that* job in the Flink UI.
+Demo controls produce real records: *Inject engine spike* → maintenance alert →
 AI recommendation, usually within a second or two; *Inject speed anomaly*
 shows the fixed rule and the per-vehicle baseline side by side on the
 Safety tab. *Reset real pipeline* deletes every record in every topic.

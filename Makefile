@@ -24,7 +24,8 @@ up:
 	@echo "console:      http://localhost:$${APP_PORT:-8787}"
 	@echo "MCP:          http://localhost:$${APP_PORT:-8787}/mcp"
 	@echo "Flink UI:     http://localhost:8081"
-	@echo "object store: http://localhost:9001  (fleet / fleet-secret)"
+	@echo "Kafka UI:     http://localhost:8080"
+	@echo "object store: http://localhost:9001/rustfs/console/  (fleet / fleet-secret)"
 
 down:
 	docker compose down
