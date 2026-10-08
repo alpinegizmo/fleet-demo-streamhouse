@@ -32,10 +32,11 @@ const GEOZONES = [
   'melbourne-cbd',
 ];
 
-// Real-world anchor coordinates for each geozone - only used by the
-// SIMULATED fallback engine below, so its vehicles still plot at coherent
-// Melbourne metro positions on the console's map (LIVE mode gets real
-// lat/lng straight from vehicle.telemetry's position field instead).
+// Real-world anchor coordinates for each geozone. Used by the SIMULATED
+// fallback engine below, so its vehicles still plot at coherent Melbourne
+// metro positions (LOCAL mode gets real lat/lng straight from
+// vehicle.telemetry's position field instead), and as the fallback position
+// for an injected record when a vehicle hasn't reported yet.
 const GEOZONE_COORDS = {
   'melbourne-cbd': [-37.8136, 144.9631],
   'docklands-cbd': [-37.8142, 144.9490],
@@ -48,6 +49,21 @@ const GEOZONE_COORDS = {
 // Tags a demo injection so the pipeline carries it through to the
 // recommendations it causes (the injection_id column in
 // local/flink/sql/00-tables.sql) and the console can mark them.
+// Where an injected record puts the vehicle: its latest reported position and
+// heading, so the marker stays put instead of jumping to a fixed point and
+// back on the next normal report. Falls back to its geozone's centre.
+function injectedPosition(base, geozone, speed) {
+  const [lat, lng] = GEOZONE_COORDS[geozone] ?? GEOZONE_COORDS['melbourne-cbd'];
+  return {
+    altitude: 50,
+    longitude: base?.lng ?? lng,
+    latitude: base?.lat ?? lat,
+    direction: base?.direction ?? 0,
+    satellites_count: 10,
+    speed,
+  };
+}
+
 function newInjectionId() {
   return `inj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -657,14 +673,17 @@ class LiveContextEngine {
       datetime: new Date().toISOString().replace(/\.\d+Z$/, '.000Z'),
       ignition_status: 'ON',
       trip_type: 'BUSINESS',
-      position: { altitude: 50, longitude: 144.9, latitude: -37.8, direction: 180, satellites_count: 10, speed: 40 },
+      position: injectedPosition(base, geozone, 40),
       inputs: {
         other: { country_code_geonames: 2077456, virtual_gps_odometer: 100000 },
-        calculated_inputs: { fuel_consumption: 0.5, fuel_level: 50, mileage: 100000, rpm: 2000, temperature: 104, weight: 2000 },
+        // 107 C: over the 105 C threshold, so the maintenance alert is high
+        // severity and the vehicle stays red until its risk expires - at 104 C
+        // the alert was medium and the vehicle was red only for the one reading.
+        calculated_inputs: { fuel_consumption: 0.5, fuel_level: 50, mileage: 100000, rpm: 2000, temperature: 107, weight: 2000 },
         device_inputs: {
           priority: 'HIGH', movement: 'MOVING', hdop: '0.5',
           power_supply_voltage: 13, battery_voltage: 12, gps_speed: 40, gsm_signal_strength: 0.8, operator: 0.5,
-          engine_rpm: 2000, canbus_engine_coolant_temperature: 104, fuel_level_can: 50, speed_wheel: 40,
+          engine_rpm: 2000, canbus_engine_coolant_temperature: 107, fuel_level_can: 50, speed_wheel: 40,
           overspeeding_events: 'OVERSPEED', ecodrive_braking_events: 0.9, ecodrive_harsh_acceleration: 0.5, ecodrive_idling_time: 0.1,
           lcv_driver_doors: 'CLOSE', lcv_left_back_doors: 'CLOSE', lcv_right_back_doors: 'CLOSE',
         },
@@ -714,7 +733,7 @@ class LiveContextEngine {
       datetime: new Date().toISOString().replace(/\.\d+Z$/, '.000Z'),
       ignition_status: 'ON',
       trip_type: 'BUSINESS',
-      position: { altitude: 50, longitude: 144.9, latitude: -37.8, direction: 180, satellites_count: 10, speed: spikeSpeed },
+      position: injectedPosition(base, geozone, spikeSpeed),
       inputs: {
         other: { country_code_geonames: 2077456, virtual_gps_odometer: 100000 },
         calculated_inputs: { fuel_consumption: 0.5, fuel_level: 50, mileage: 100000, rpm: 4200, temperature: 90, weight: 2000 },
@@ -1053,7 +1072,7 @@ class SimulatedContextEngine {
     const v = vehicleId ? this.vehicles.get(vehicleId) : [...this.vehicles.values()][Math.floor(Math.random() * this.vehicles.size)];
     if (!v) return null;
     v.spiked = true;
-    v.engineTemp = 104;
+    v.engineTemp = 107;
     v.maintRisk = 92;
     v.driverRisk = Math.max(v.driverRisk, 72);
     const injectionId = newInjectionId();
