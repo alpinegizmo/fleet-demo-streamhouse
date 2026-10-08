@@ -69,6 +69,14 @@ function decodeValue(buffer) {
 // true for most overspeed events, which isn't a meaningful comparison.
 const RISK_MATCH_WINDOW_MS = 20 * 1000;
 
+// A vehicle's maintenance / driver risk comes from its most recent alert of
+// that kind, and nothing lowers it while the vehicle drives normally - so
+// without an expiry, one overheat kept a vehicle red on the map (and counted
+// as an open work order) indefinitely. Risk now lapses this long after the
+// alert that set it, unless a newer alert renews it. Measured from the
+// alert's Kafka timestamp, so history replayed at startup is already stale.
+const RISK_HOLD_MS = 2 * 60 * 1000;
+
 function severityToRisk(severity) {
   if (severity === 'high') return 90;
   if (severity === 'medium') return 65;
@@ -236,7 +244,7 @@ class LiveContextEngine {
         } catch {
           return; // skip anything that isn't valid JSON
         }
-        this._applyRecord(topic, record);
+        this._applyRecord(topic, record, Number(message.timestamp));
         remember(topic, record, message.timestamp); // for SQL via MCP - see query-store.js
 
         // Everything below is about live traffic only, not the history this
@@ -258,7 +266,7 @@ class LiveContextEngine {
     setTimeout(() => { this.ready = true; }, 8000);
   }
 
-  _applyRecord(topic, r) {
+  _applyRecord(topic, r, kafkaTs = Date.now()) {
     switch (topic) {
       case 'vehicle.telemetry': {
         const geozone = r.geozone_ids?.[0];
@@ -310,7 +318,10 @@ class LiveContextEngine {
       }
       case 'maintenance.alerts': {
         const v = this.vehicles.get(r.vehicle_id);
-        if (v) v.maintRisk = severityToRisk(r.severity);
+        if (v) {
+          v.maintRisk = severityToRisk(r.severity);
+          v.maintRiskAt = kafkaTs;
+        }
         // receivedAt (wall-clock consumption time), not r.event_time, is what
         // the trace-strip UI correlates against an injection's timestamp -
         // event_time is the Flink-derived business event's own clock, not
@@ -332,6 +343,7 @@ class LiveContextEngine {
         const v = this.vehicles.get(r.vehicle_id);
         if (v) {
           v.driverRisk = severityToRisk(r.risk_level);
+          v.driverRiskAt = kafkaTs;
           v.overspeed = r.overspeed_status === 'OVERSPEED';
           v.harshBrakingEvents = r.harsh_braking_score;
         }
@@ -446,7 +458,16 @@ class LiveContextEngine {
 
   // --- public interface matching the original simulator's shape --------
 
+  _expireRisks() {
+    const now = Date.now();
+    for (const v of this.vehicles.values()) {
+      if (v.maintRisk && now - (v.maintRiskAt ?? 0) > RISK_HOLD_MS) v.maintRisk = 0;
+      if (v.driverRisk && now - (v.driverRiskAt ?? 0) > RISK_HOLD_MS) v.driverRisk = 0;
+    }
+  }
+
   async getFleetSummary() {
+    this._expireRisks();
     const list = [...this.vehicles.values()];
     const avg = (fn) => (list.length ? list.reduce((s, v) => s + (fn(v) || 0), 0) / list.length : 0);
     const now = Date.now();
@@ -502,12 +523,14 @@ class LiveContextEngine {
   }
 
   async getVehicle(id) {
+    this._expireRisks();
     const v = this.vehicles.get(id);
     if (!v) return null;
     return { ...v, currentWeather: this.weather.get(v.geozone) ?? null };
   }
 
   async listVehicles() {
+    this._expireRisks();
     return [...this.vehicles.values()].map((v) => ({ ...v, currentWeather: this.weather.get(v.geozone) ?? null }));
   }
 

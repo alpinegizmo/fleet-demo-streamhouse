@@ -120,6 +120,10 @@
   .rec .conf{color:var(--green);}
   /* A recommendation caused by a demo injection (it carries the injection_id
      the pipeline propagated) - stands out from the steady background traffic. */
+  /* Map legend (bottom-left) - marker colours, matching renderMap */
+  .map-legend{display:flex;gap:12px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-family:var(--font-body);font-size:11px;color:var(--ink);}
+  .map-legend span{display:flex;align-items:center;gap:6px;white-space:nowrap;}
+  .map-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;border:1px solid #0D0D10;}
   /* Vehicle popup on the map (click a vehicle) */
   .vehicle-popup .leaflet-popup-content{margin:12px 14px;font-family:var(--font-body);font-size:12px;line-height:1.4;color:var(--ink);}
   .vpop-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:8px;}
@@ -542,6 +546,20 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   subdomains: 'abc',
   maxZoom: 19,
 }).addTo(leafletMap);
+
+// Legend for the vehicle colours set in renderMap: red = engine over 100 C
+// or high maintenance risk, amber = high driver risk. Kept to one short row;
+// the vehicle popup shows the actual temperature and risk levels.
+const mapLegend = L.control({ position: 'bottomleft' });
+mapLegend.onAdd = () => {
+  const div = L.DomUtil.create('div', 'map-legend');
+  div.innerHTML = `
+    <span><i style="background:#DC1928"></i>Maintenance</span>
+    <span><i style="background:#EDA51F"></i>Driver risk</span>
+    <span><i style="background:#3587DA"></i>Normal</span>`;
+  return div;
+};
+mapLegend.addTo(leafletMap);
 
 const truckMarkers = {};
 // Arrowhead icon rotated to the vehicle's real compass bearing (0=N, from
