@@ -40,8 +40,15 @@ x-s3: &s3
   S3_ACCESS_KEY: fleet
   S3_SECRET_KEY: fleet-secret
 
+# One image for the jobmanager, the taskmanager and flink-sql-init, built by
+# flink-jobmanager only. When all three had `build:`, `docker compose up
+# --build` recreated all three containers on every run, changed or not -
+# dropping the running jobs until flink-sql-init resubmitted them.
+#
+# Every locally built image also sets provenance: false: Docker's default
+# build attestations give each build a new image ID even when every layer
+# comes from cache, which is just as good a reason to recreate.
 x-flink: &flink
-  build: local/flink
   image: fleet-flink:2.2.1
   extra_hosts:
     - "host.docker.internal:host-gateway"   # Docker Desktop provides this; Linux needs it
@@ -179,6 +186,7 @@ services:
 
   flink-jobmanager:
     <<: *flink
+    build: { context: local/flink, provenance: false }
     command: jobmanager
     ports:
       - "8081:8081"   # Flink web UI
@@ -221,7 +229,7 @@ services:
       JAVA_OPTS: -Xmx384m
 
   seed:
-    build: .
+    build: { context: ., provenance: false }
     depends_on:
       kafka-init: { condition: service_completed_successfully }
     environment:
@@ -229,7 +237,7 @@ services:
     command: ["node", "seed.js"]
 
   fleet-app:
-    build: .
+    build: { context: ., provenance: false }
     depends_on:
       seed: { condition: service_completed_successfully }
     ports:
@@ -252,7 +260,7 @@ services:
   # SQL shell on the Iceberg tables; not started by `up`.
   #   docker compose run --rm duckdb
   duckdb:
-    build: local/duckdb
+    build: { context: local/duckdb, provenance: false }
     profiles: [tools]
     depends_on:
       iceberg-rest: { condition: service_healthy }
