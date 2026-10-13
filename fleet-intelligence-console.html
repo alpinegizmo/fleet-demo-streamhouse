@@ -195,12 +195,12 @@
   .bts-node.link .lbl::after{content:'\00a0↗';font-weight:400;opacity:.55;}
   .bts-node.active{opacity:1;transform:scale(1.035);box-shadow:0 0 16px color-mix(in srgb, var(--node-color) 55%, transparent);}
   .bts-node .lbl{font-size:1cqw;font-weight:700;line-height:1.2;color:var(--node-color);}
-  .bts-node .sub{font-size:.8cqw;color:var(--steel);line-height:1.35;white-space:pre-line;}
+  .bts-node .sub{margin:0;font-size:.8cqw;color:var(--steel);line-height:1.35;white-space:pre-line;}
   /* A wide, short box (the Schema Registry): label and subtitle on one line,
      and the subtitle stays at every width - there's room for it. */
   .bts-node.wide{flex-direction:row;align-items:center;justify-content:flex-start;gap:1.5cqw;}
   .bts-node.wide .lbl{white-space:nowrap;}
-  .bts-node.wide .sub{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bts-node.wide .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .bts-edge-static{stroke-dasharray:4 4;}
   /* Narrower than ~1100 px the captions get too small to read: show just the
      node names, a little larger (they may wrap onto two lines). */
@@ -1410,7 +1410,7 @@ const BTS_W = 1200, BTS_H = 300;
 const BTS_NODES = {
   source:        { x:10,   y:115, w:120, h:90, kind:'source',    label:'Sources',           sub:'vehicle / weather /\ntraffic / parcel sims', static:true },
   kafka:         { x:165,  y:115, w:120, h:90, kind:'kafka',     label:'Kafka',              sub:'11 topics\nraw + business + AI' },
-  flinkBusiness: { x:320,  y:115, w:140, h:90, kind:'flink',     label:'Flink · Business',  sub:'maintenance / driver-risk /\ndelivery derivation' },
+  flinkBusiness: { x:320,  y:115, w:140, h:90, kind:'flink',     label:'Flink · Business',  sub:'maintenance, driver-risk\nand delivery events' },
   flinkAi:       { x:495,  y:115, w:140, h:90, kind:'flink',     label:'Flink · AI Advisor',sub:'ML_PREDICT → local LLM' },
   serve:         { x:670,  y:115, w:110, h:90, kind:'serve',     label:'Serve',              sub:'fleet-context-engine\nKafka consumer' },
   app:           { x:830,  y:15,  w:150, h:70, kind:'app',       label:'App',                sub:'this console' },
