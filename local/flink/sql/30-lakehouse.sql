@@ -11,6 +11,29 @@
 --
 -- The raw/context topics are left out, as they were with Tableflow: high
 -- volume, low analytical value.
+--
+-- Table maintenance runs inside this job, after its own commits (Iceberg's
+-- v2 sink with post-commit maintenance). Without it, every checkpoint adds a
+-- snapshot to every table forever, and each commit writes a new
+-- metadata.json listing all of them: after 4 days the 7 tables held 65 GB
+-- of metadata (the newest file 6.6 MB) against 250 MB of data, the catalog
+-- and object store ran out of memory, and the job stopped committing.
+--   - expire snapshots: keep 1 hour of history (at least the last 10), so
+--     time travel works for recent changes and the snapshot list stays short
+--   - rewrite data files: compact the many small files (one per checkpoint
+--     per table) every 10 commits or 10 minutes
+--   - delete orphan files: files left behind by failed commits, once a day
+--     old (well past any in-flight checkpoint)
+-- Each table also keeps only its last 10 metadata.json files (see the
+-- write.metadata.* properties below); expiring snapshots alone doesn't
+-- delete those.
+SET 'table.exec.iceberg.use-v2-sink' = 'true';
+SET 'flink-maintenance.expire-snapshots.enabled' = 'true';
+SET 'flink-maintenance.expire-snapshots.max-snapshot-age-seconds' = '3600';
+SET 'flink-maintenance.expire-snapshots.retain-last' = '10';
+SET 'flink-maintenance.rewrite.enabled' = 'true';
+SET 'flink-maintenance.delete-orphan-files.enabled' = 'true';
+SET 'flink-maintenance.delete-orphan-files.min-age-seconds' = '86400';
 
 CREATE CATALOG lake WITH (
   'type' = 'iceberg',
@@ -28,8 +51,12 @@ CREATE CATALOG lake WITH (
 CREATE DATABASE IF NOT EXISTS lake.fleet;
 
 -- Each Iceberg table has the topic's columns (including injection_id where
--- the topic has one) plus the record's Kafka coordinates. Delivery is at-least-once, so a Flink restart can copy a
--- few records twice; (kafka_partition, kafka_offset) identifies duplicates.
+-- the topic has one) plus the record's Kafka coordinates. Delivery is
+-- at-least-once, so a Flink restart can copy a few records twice;
+-- (kafka_partition, kafka_offset) identifies duplicates.
+--
+-- The WITH options are Iceberg table properties, so they only take effect
+-- when a table is created - `make reset` applies changes to them.
 
 CREATE TABLE IF NOT EXISTS lake.fleet.maintenance_alerts (
   vehicle_id STRING,
@@ -42,6 +69,9 @@ CREATE TABLE IF NOT EXISTS lake.fleet.maintenance_alerts (
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
+) WITH (
+  'write.metadata.delete-after-commit.enabled' = 'true',
+  'write.metadata.previous-versions-max' = '10'
 );
 
 CREATE TABLE IF NOT EXISTS lake.fleet.driver_risk_events (
@@ -56,6 +86,9 @@ CREATE TABLE IF NOT EXISTS lake.fleet.driver_risk_events (
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
+) WITH (
+  'write.metadata.delete-after-commit.enabled' = 'true',
+  'write.metadata.previous-versions-max' = '10'
 );
 
 CREATE TABLE IF NOT EXISTS lake.fleet.driver_risk_events_anomaly (
@@ -71,6 +104,9 @@ CREATE TABLE IF NOT EXISTS lake.fleet.driver_risk_events_anomaly (
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
+) WITH (
+  'write.metadata.delete-after-commit.enabled' = 'true',
+  'write.metadata.previous-versions-max' = '10'
 );
 
 CREATE TABLE IF NOT EXISTS lake.fleet.delivery_performance_events (
@@ -83,6 +119,9 @@ CREATE TABLE IF NOT EXISTS lake.fleet.delivery_performance_events (
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
+) WITH (
+  'write.metadata.delete-after-commit.enabled' = 'true',
+  'write.metadata.previous-versions-max' = '10'
 );
 
 CREATE TABLE IF NOT EXISTS lake.fleet.ai_maintenance_recommendations (
@@ -95,6 +134,9 @@ CREATE TABLE IF NOT EXISTS lake.fleet.ai_maintenance_recommendations (
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
+) WITH (
+  'write.metadata.delete-after-commit.enabled' = 'true',
+  'write.metadata.previous-versions-max' = '10'
 );
 
 CREATE TABLE IF NOT EXISTS lake.fleet.ai_safety_recommendations (
@@ -107,6 +149,9 @@ CREATE TABLE IF NOT EXISTS lake.fleet.ai_safety_recommendations (
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
+) WITH (
+  'write.metadata.delete-after-commit.enabled' = 'true',
+  'write.metadata.previous-versions-max' = '10'
 );
 
 CREATE TABLE IF NOT EXISTS lake.fleet.ai_delivery_recommendations (
@@ -118,6 +163,9 @@ CREATE TABLE IF NOT EXISTS lake.fleet.ai_delivery_recommendations (
   kafka_partition INT,
   kafka_offset BIGINT,
   kafka_timestamp TIMESTAMP_LTZ(6)
+) WITH (
+  'write.metadata.delete-after-commit.enabled' = 'true',
+  'write.metadata.previous-versions-max' = '10'
 );
 
 EXECUTE STATEMENT SET

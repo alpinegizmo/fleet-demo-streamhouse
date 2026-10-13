@@ -81,7 +81,11 @@ to almost everything.
 **Lakehouse** — `local/flink/sql/30-lakehouse.sql`, job `fleet-lakehouse`.
 The seven derived topics are continuously copied into Iceberg tables
 (`lake.fleet.*`), each row keeping its Kafka partition, offset and
-timestamp. A new snapshot is committed every Flink checkpoint (30 s).
+timestamp. A new snapshot is committed every Flink checkpoint (30 s). The
+same job maintains the tables after its own commits: it expires snapshots
+older than an hour (keeping at least 10), compacts the small files that
+every checkpoint leaves, deletes orphaned files, and keeps only the last 10
+`metadata.json` files per table.
 
 All table definitions live in `local/flink/sql/00-tables.sql` — with no
 schema registry, that DDL *is* the schema contract.
@@ -186,11 +190,12 @@ next `make up`; the jobs are resubmitted and resume from their offsets.
 
 ## Known limitations
 
-- **Iceberg tables aren't maintained.** Every checkpoint commits a snapshot
-  with small files to each of the seven tables, and nothing expires
-  snapshots or compacts files, so a demo left running for days keeps
-  growing. `make reset` clears it. (Tableflow handles this for you; open-source
-  Flink offers it only via its DataStream table-maintenance API.)
+- **Iceberg time travel only reaches back an hour.** The lakehouse job
+  expires older snapshots; the rows stay, but `FOR SYSTEM_TIME AS OF` an
+  older time doesn't work. Without that maintenance, a 30 s commit interval
+  grew the tables' metadata to 65 GB in four days and took the object store
+  down. Maintenance runs inside the lakehouse job, so when that job is
+  failing, maintenance stops too. (Tableflow runs this as a managed service.)
 - **No Flink HA.** Anything that recreates the jobmanager (including
   rebuilding the Flink image) drops the running jobs until `flink-sql-init`
   runs again — `make up` does that.

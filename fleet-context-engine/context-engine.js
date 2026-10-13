@@ -210,6 +210,9 @@ class LiveContextEngine {
           lastSeq.set(table, seq);
           // First sighting is just the baseline, not a commit seen live.
           if (previous === undefined || previous === seq) return;
+          // Only Flink's appends are new data; the lakehouse job's own
+          // compaction commits ('replace') rewrite rows already there.
+          if (snapshot.summary?.operation !== 'append') return;
           const added = Number(snapshot.summary?.['added-records'] ?? 0);
           this._pushPulseHop('tableflow', 'serve-tableflow', `Iceberg commit · ${table} +${added} rows`);
           this._pushPulseHop('snowflake', 'tableflow-snowflake', `queryable in DuckDB · lake.fleet.${table}`);
