@@ -107,7 +107,7 @@ New and changed compose services:
    - inject engine spike → maintenance alert (107 °C, high) → AI recommendation with the same `injection_id` in 0.6 s; inject speed anomaly → both the per-vehicle anomaly (150 vs a 44.6 km/h baseline) and the fixed rule → AI safety recommendation, all with its `injection_id`;
    - MCP `queryData`, `make duckdb` (Iceberg, compacting as before) and `make sql` all return the injected rows. Note for anyone testing `make sql` by script: `LIMIT` doesn't end a streaming query on Kafka; use a `scan.bounded.mode` hint.
    - Kafbat needed `KAFKA_CLUSTERS_0_DEFAULTVALUESERDE: SchemaRegistry`: it lists the registry serde but prefers `String`, which shows Avro as bytes. It shows nullable fields in Avro's JSON encoding (`"geozone": {"string": "essendon-fields"}`).
-4. **Console.** Top-bar link and Behind the Scenes box, legible at 1280 px.
+4. **Console.** ✅ Done 2026-10-13. A **Schemas ↗** top-bar link to Kafbat's `/ui/clusters/fleet/schemas`. On Behind the Scenes, a wide Schema Registry box under the Kafka → Serve row, inside the governance band (which now reaches down to cover it), opening the same page. Dashed, never-animated stubs connect it to Sources, both Flink jobs and Serve, and deliberately not to Kafka: the broker checks nothing. Its subtitle, "11 Avro schemas · read-only · fetched once, not per record", stays visible at every width, unlike the other boxes' captions, which hide below ~1100 px. The tooltip explains why it's static. Checked in headless Chrome at 1024, 1280 and 1600 px.
 5. **Docs and skill.**
 
 ## Verification (end of phase 3, from `make reset && make up`)

@@ -196,11 +196,18 @@
   .bts-node.active{opacity:1;transform:scale(1.035);box-shadow:0 0 16px color-mix(in srgb, var(--node-color) 55%, transparent);}
   .bts-node .lbl{font-size:1cqw;font-weight:700;line-height:1.2;color:var(--node-color);}
   .bts-node .sub{font-size:.8cqw;color:var(--steel);line-height:1.35;white-space:pre-line;}
+  /* A wide, short box (the Schema Registry): label and subtitle on one line,
+     and the subtitle stays at every width - there's room for it. */
+  .bts-node.wide{flex-direction:row;align-items:center;justify-content:flex-start;gap:1.5cqw;}
+  .bts-node.wide .lbl{white-space:nowrap;}
+  .bts-node.wide .sub{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .bts-edge-static{stroke-dasharray:4 4;}
   /* Narrower than ~1100 px the captions get too small to read: show just the
      node names, a little larger (they may wrap onto two lines). */
   @container bts-canvas (max-width: 1100px){
     .bts-node .sub{display:none;}
     .bts-node .lbl{font-size:1.3cqw;}
+    .bts-node.wide .sub{display:block;font-size:1.05cqw;}
   }
   .bts-eventlog{background:var(--panel);border:1px solid var(--line);border-radius:10px;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
   .bts-eventlog-header{padding:8px 14px;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--steel);border-bottom:1px solid var(--line);flex-shrink:0;}
@@ -219,6 +226,7 @@
       <nav class="tools" aria-label="Pipeline tools">
         <a id="tool-flink" target="_blank" rel="noopener" title="Apache Flink web UI: jobs, checkpoints, backpressure">Flink UI ↗</a>
         <a id="tool-kafka" target="_blank" rel="noopener" title="Kafbat UI: topics, messages, consumer groups and lag">Kafka UI ↗</a>
+        <a id="tool-schemas" target="_blank" rel="noopener" title="Kafbat UI: the Schema Registry's subjects, versions and compatibility">Schemas ↗</a>
         <a id="tool-files" target="_blank" rel="noopener" title="RustFS console: the Iceberg tables' files in the object store">Object store ↗</a>
       </nav>
       <div class="clock" id="clock">--:--:--</div>
@@ -1409,8 +1417,11 @@ const BTS_NODES = {
   agent:         { x:830,  y:115, w:150, h:70, kind:'agent',     label:'Agent',              sub:'MCP · /mcp\n(Claude, Copilot)' },
   tableflow:     { x:830,  y:215, w:150, h:70, kind:'tableflow', label:'Iceberg',            sub:'Flink sink · RustFS\nobject store' },
   snowflake:     { x:1020, y:215, w:150, h:70, kind:'snowflake', label:'DuckDB',             sub:'query engine ·\nanalytics' },
+  // Never animated (no pipeline event names it): serializers look a schema
+  // up once and cache its ID, so there's no per-record registry traffic.
+  registry:      { x:165,  y:238, w:615, h:44, kind:'registry',  label:'Schema Registry',    sub:'11 Avro schemas · read-only · fetched once, not per record', wide:true },
 };
-const BTS_KIND_COLOR = { source:'steel', kafka:'blue', flink:'amber', serve:'green', app:'blue', agent:'purple', tableflow:'green', snowflake:'red-dim' };
+const BTS_KIND_COLOR = { source:'steel', kafka:'blue', flink:'amber', serve:'green', app:'blue', agent:'purple', tableflow:'green', snowflake:'red-dim', registry:'green' };
 
 function btsMid(n){ return { x: n.x + n.w/2, y: n.y + n.h/2 }; }
 
@@ -1422,7 +1433,7 @@ const btsGov = {
   x: BTS_NODES.kafka.x - BTS_GOV_PAD,
   y: BTS_NODES.kafka.y - BTS_GOV_PAD_TOP,
   w: (BTS_NODES.serve.x + BTS_NODES.serve.w) - BTS_NODES.kafka.x + BTS_GOV_PAD * 2,
-  h: BTS_NODES.kafka.h + BTS_GOV_PAD_TOP + BTS_GOV_PAD,
+  h: (BTS_NODES.registry.y + BTS_NODES.registry.h) - BTS_NODES.kafka.y + BTS_GOV_PAD_TOP + BTS_GOV_PAD,
 };
 
 const BTS_EDGES = (() => {
@@ -1442,6 +1453,18 @@ const BTS_EDGES = (() => {
   };
 })();
 
+// Never animated: who uses the Schema Registry. The producers (Sources),
+// both Flink jobs (they read and write Avro) and Serve (it decodes every
+// topic). Not Kafka: the broker stores bytes and checks nothing.
+const BTS_STATIC_EDGES = (() => {
+  const r = BTS_NODES.registry, s = BTS_NODES.source, rm = btsMid(r);
+  const up = n => `M ${btsMid(n).x} ${n.y + n.h} L ${btsMid(n).x} ${r.y}`;
+  return [
+    `M ${btsMid(s).x} ${s.y + s.h} L ${btsMid(s).x} ${rm.y} L ${r.x} ${rm.y}`,
+    up(BTS_NODES.flinkBusiness), up(BTS_NODES.flinkAi), up(BTS_NODES.serve),
+  ];
+})();
+
 /* ---------- links out to the underlying systems' web UIs ----------
    Same host as this console, on the ports docker-compose.yml publishes.
    Flink job IDs change on every resubmit, so they're looked up by job name
@@ -1451,10 +1474,12 @@ const TOOL_HOST = location.hostname || 'localhost';
 const TOOL_URLS = {
   flink: `http://${TOOL_HOST}:8081/`,
   kafka: `http://${TOOL_HOST}:8080/ui/clusters/fleet/all-topics`,
+  schemas: `http://${TOOL_HOST}:8080/ui/clusters/fleet/schemas`,
   files: `http://${TOOL_HOST}:9001/rustfs/console/`,
 };
 document.getElementById('tool-flink').href = TOOL_URLS.flink;
 document.getElementById('tool-kafka').href = TOOL_URLS.kafka;
+document.getElementById('tool-schemas').href = TOOL_URLS.schemas;
 document.getElementById('tool-files').href = TOOL_URLS.files;
 
 let flinkJobIds = {};
@@ -1472,6 +1497,7 @@ const BTS_NODE_LINKS = {
   flinkBusiness: { title: 'Open the fleet-business job in the Flink UI', url: () => flinkJobUrl('fleet-business') },
   flinkAi:       { title: 'Open the fleet-ai job in the Flink UI', url: () => flinkJobUrl('fleet-ai') },
   tableflow:     { title: "Open the Iceberg tables' files in the object store", url: () => TOOL_URLS.files },
+  registry:      { title: 'Open the schemas in Kafka UI. Not animated: clients fetch a schema once and cache its ID, so there is no per-record registry traffic', url: () => TOOL_URLS.schemas },
 };
 
 function btsRenderStatic(){
@@ -1481,13 +1507,16 @@ function btsRenderStatic(){
   const edgePaths = Object.entries(BTS_EDGES).map(([id, e]) =>
     `<path id="bts-edge-${id}" d="${e.d}" fill="none" stroke="var(--${e.color})" stroke-width="2" opacity="0.45"></path>`
   ).join('');
-  svg.innerHTML = govRect + edgePaths;
+  const staticPaths = BTS_STATIC_EDGES.map(d =>
+    `<path class="bts-edge-static" d="${d}" fill="none" stroke="var(--green)" stroke-width="1.5" opacity="0.45"></path>`
+  ).join('');
+  svg.innerHTML = govRect + staticPaths + edgePaths;
 
   document.getElementById('bts-nodes').innerHTML = Object.entries(BTS_NODES).map(([id, n]) => {
     const color = BTS_KIND_COLOR[n.kind] || 'steel';
     const style = `left:${(n.x / BTS_W) * 100}%;top:${(n.y / BTS_H) * 100}%;width:${(n.w / BTS_W) * 100}%;height:${(n.h / BTS_H) * 100}%;--node-color:var(--${color});`;
     const link = BTS_NODE_LINKS[id];
-    return `<div class="bts-node${n.static ? ' static' : ''}${link ? ' link' : ''}" id="bts-node-${id}" style="${style}"${link ? ` title="${link.title}"` : ''}>
+    return `<div class="bts-node${n.static ? ' static' : ''}${n.wide ? ' wide' : ''}${link ? ' link' : ''}" id="bts-node-${id}" style="${style}"${link ? ` title="${link.title}"` : ''}>
       <span class="lbl">${n.label}</span>
       <span class="sub">${n.sub}</span>
     </div>`;
