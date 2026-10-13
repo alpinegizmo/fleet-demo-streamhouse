@@ -2,15 +2,25 @@
 -- as the init script for every job, because Flink's default catalog is
 -- in-memory and per-session: each job declares the tables it uses.
 --
--- These DDL statements ARE the schema contract - there's no schema
--- registry. Every topic carries plain JSON; a field missing from a record
--- reads as NULL, and a record that isn't valid JSON is skipped
--- ('json.ignore-parse-errors'). The columns match the Confluent Cloud
--- version of this pipeline exactly, so the console reads both the same way.
+-- Every topic carries Avro, registered in Schema Registry: the schema
+-- contract is schemas/<topic>.avsc, and each table here must match its
+-- schema field for field (same names, types and order; the record key is
+-- the one NOT NULL column). Each table is given its schema's exact text
+-- (the SCHEMA_<TOPIC> variables, see schema-env.sh) instead of letting
+-- Flink derive one from the columns, so the schema Flink writes with is
+-- the registered one.
+-- A record that can't be decoded fails the job - it isn't skipped - and the
+-- job restarts until the record is gone (see the README's Known
+-- limitations). The columns match the Confluent Cloud version of this
+-- pipeline exactly, so the console reads both the same way.
 --
 -- ${PIPELINE} is the submitting job's name (e.g. fleet-business), used as
 -- its Kafka consumer group: each job commits its own offsets on every
 -- checkpoint, so a resubmitted job resumes where it left off.
+
+-- The avro-confluent format, loaded for each job rather than from Flink's
+-- lib/ (see local/flink/Dockerfile).
+ADD JAR '/opt/flink/opt/flink-sql-avro-confluent-registry-2.2.1.jar';
 
 SET 'pipeline.name' = '${PIPELINE}';
 -- A topic partition that goes quiet must not hold back event time for the
@@ -20,7 +30,7 @@ SET 'table.exec.source.idle-timeout' = '10 s';
 -- --- Raw and context topics, produced by fleet-context-engine -------------
 
 CREATE TABLE `vehicle.telemetry` (
-  object_id STRING,
+  object_id STRING NOT NULL,
   `datetime` STRING,
   ignition_status STRING,
   trip_type STRING,
@@ -97,12 +107,13 @@ CREATE TABLE `vehicle.telemetry` (
   'properties.group.id' = '${PIPELINE}',
   'scan.startup.mode' = 'group-offsets',
   'properties.auto.offset.reset' = 'earliest',
-  'format' = 'json',
-  'json.ignore-parse-errors' = 'true'
+  'format' = 'avro-confluent',
+  'avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'avro-confluent.schema' = '${SCHEMA_VEHICLE_TELEMETRY}'
 );
 
 CREATE TABLE `weather.conditions` (
-  geozone STRING,
+  geozone STRING NOT NULL,
   `condition` STRING,
   temp_c DOUBLE,
   wind_kph DOUBLE,
@@ -114,12 +125,13 @@ CREATE TABLE `weather.conditions` (
   'properties.group.id' = '${PIPELINE}',
   'scan.startup.mode' = 'group-offsets',
   'properties.auto.offset.reset' = 'earliest',
-  'format' = 'json',
-  'json.ignore-parse-errors' = 'true'
+  'format' = 'avro-confluent',
+  'avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'avro-confluent.schema' = '${SCHEMA_WEATHER_CONDITIONS}'
 );
 
 CREATE TABLE `traffic.incidents` (
-  geozone STRING,
+  geozone STRING NOT NULL,
   `type` STRING,
   severity STRING,
   `timestamp` STRING
@@ -130,12 +142,13 @@ CREATE TABLE `traffic.incidents` (
   'properties.group.id' = '${PIPELINE}',
   'scan.startup.mode' = 'group-offsets',
   'properties.auto.offset.reset' = 'earliest',
-  'format' = 'json',
-  'json.ignore-parse-errors' = 'true'
+  'format' = 'avro-confluent',
+  'avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'avro-confluent.schema' = '${SCHEMA_TRAFFIC_INCIDENTS}'
 );
 
 CREATE TABLE `parcel.volume` (
-  vehicle_id STRING,
+  vehicle_id STRING NOT NULL,
   geozone STRING,
   parcels_onboard INT,
   parcels_delivered_last_hour INT,
@@ -147,8 +160,9 @@ CREATE TABLE `parcel.volume` (
   'properties.group.id' = '${PIPELINE}',
   'scan.startup.mode' = 'group-offsets',
   'properties.auto.offset.reset' = 'earliest',
-  'format' = 'json',
-  'json.ignore-parse-errors' = 'true'
+  'format' = 'avro-confluent',
+  'avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'avro-confluent.schema' = '${SCHEMA_PARCEL_VOLUME}'
 );
 
 -- --- Business-domain topics, derived by 10-business.sql -------------------
@@ -161,7 +175,7 @@ CREATE TABLE `parcel.volume` (
 -- Iceberg), but not part of the value written to Kafka.
 
 CREATE TABLE `maintenance.alerts` (
-  vehicle_id STRING,
+  vehicle_id STRING NOT NULL,
   geozone STRING,
   engine_temp_c DOUBLE,
   severity STRING,
@@ -180,13 +194,14 @@ CREATE TABLE `maintenance.alerts` (
   'properties.auto.offset.reset' = 'earliest',
   'key.format' = 'raw',
   'key.fields' = 'vehicle_id',
-  'value.format' = 'json',
+  'value.format' = 'avro-confluent',
   'value.fields-include' = 'ALL',
-  'value.json.ignore-parse-errors' = 'true'
+  'value.avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'value.avro-confluent.schema' = '${SCHEMA_MAINTENANCE_ALERTS}'
 );
 
 CREATE TABLE `driver.risk.events` (
-  vehicle_id STRING,
+  vehicle_id STRING NOT NULL,
   geozone STRING,
   speed_kmh DOUBLE,
   overspeed_status STRING,
@@ -206,13 +221,14 @@ CREATE TABLE `driver.risk.events` (
   'properties.auto.offset.reset' = 'earliest',
   'key.format' = 'raw',
   'key.fields' = 'vehicle_id',
-  'value.format' = 'json',
+  'value.format' = 'avro-confluent',
   'value.fields-include' = 'ALL',
-  'value.json.ignore-parse-errors' = 'true'
+  'value.avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'value.avro-confluent.schema' = '${SCHEMA_DRIVER_RISK_EVENTS}'
 );
 
 CREATE TABLE `driver.risk.events.anomaly` (
-  vehicle_id STRING,
+  vehicle_id STRING NOT NULL,
   geozone STRING,
   speed_kmh DOUBLE,
   forecast_speed_kmh DOUBLE,
@@ -233,13 +249,14 @@ CREATE TABLE `driver.risk.events.anomaly` (
   'properties.auto.offset.reset' = 'earliest',
   'key.format' = 'raw',
   'key.fields' = 'vehicle_id',
-  'value.format' = 'json',
+  'value.format' = 'avro-confluent',
   'value.fields-include' = 'ALL',
-  'value.json.ignore-parse-errors' = 'true'
+  'value.avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'value.avro-confluent.schema' = '${SCHEMA_DRIVER_RISK_EVENTS_ANOMALY}'
 );
 
 CREATE TABLE `delivery.performance.events` (
-  vehicle_id STRING,
+  vehicle_id STRING NOT NULL,
   geozone STRING,
   parcels_onboard INT,
   parcels_delivered_last_hour INT,
@@ -257,15 +274,16 @@ CREATE TABLE `delivery.performance.events` (
   'properties.auto.offset.reset' = 'earliest',
   'key.format' = 'raw',
   'key.fields' = 'vehicle_id',
-  'value.format' = 'json',
+  'value.format' = 'avro-confluent',
   'value.fields-include' = 'ALL',
-  'value.json.ignore-parse-errors' = 'true'
+  'value.avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'value.avro-confluent.schema' = '${SCHEMA_DELIVERY_PERFORMANCE_EVENTS}'
 );
 
 -- --- AI recommendation topics, derived by the AI job (phase 3) ------------
 
 CREATE TABLE `ai.maintenance.recommendations` (
-  vehicle_id STRING,
+  vehicle_id STRING NOT NULL,
   geozone STRING,
   severity STRING,
   trigger_event STRING,
@@ -283,13 +301,14 @@ CREATE TABLE `ai.maintenance.recommendations` (
   'properties.auto.offset.reset' = 'earliest',
   'key.format' = 'raw',
   'key.fields' = 'vehicle_id',
-  'value.format' = 'json',
+  'value.format' = 'avro-confluent',
   'value.fields-include' = 'ALL',
-  'value.json.ignore-parse-errors' = 'true'
+  'value.avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'value.avro-confluent.schema' = '${SCHEMA_AI_MAINTENANCE_RECOMMENDATIONS}'
 );
 
 CREATE TABLE `ai.safety.recommendations` (
-  vehicle_id STRING,
+  vehicle_id STRING NOT NULL,
   geozone STRING,
   risk_level STRING,
   speed_kmh DOUBLE,
@@ -307,13 +326,14 @@ CREATE TABLE `ai.safety.recommendations` (
   'properties.auto.offset.reset' = 'earliest',
   'key.format' = 'raw',
   'key.fields' = 'vehicle_id',
-  'value.format' = 'json',
+  'value.format' = 'avro-confluent',
   'value.fields-include' = 'ALL',
-  'value.json.ignore-parse-errors' = 'true'
+  'value.avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'value.avro-confluent.schema' = '${SCHEMA_AI_SAFETY_RECOMMENDATIONS}'
 );
 
 CREATE TABLE `ai.delivery.recommendations` (
-  vehicle_id STRING,
+  vehicle_id STRING NOT NULL,
   geozone STRING,
   performance_status STRING,
   parcels_onboard INT,
@@ -330,7 +350,8 @@ CREATE TABLE `ai.delivery.recommendations` (
   'properties.auto.offset.reset' = 'earliest',
   'key.format' = 'raw',
   'key.fields' = 'vehicle_id',
-  'value.format' = 'json',
+  'value.format' = 'avro-confluent',
   'value.fields-include' = 'ALL',
-  'value.json.ignore-parse-errors' = 'true'
+  'value.avro-confluent.url' = '${SCHEMA_REGISTRY_URL}',
+  'value.avro-confluent.schema' = '${SCHEMA_AI_DELIVERY_RECOMMENDATIONS}'
 );

@@ -56,6 +56,7 @@ x-flink: &flink
   environment:
     LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
     LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}   # ML_PREDICT recommendations
+    SCHEMA_REGISTRY_URL: http://schema-registry:8081
     <<: *s3
     FLINK_PROPERTIES: |
       jobmanager.rpc.address: flink-jobmanager
@@ -71,6 +72,8 @@ x-flink: &flink
     - ./local/flink/sql:/opt/flink/sql:ro
     - ./local/flink/submit-jobs.sh:/opt/flink/bin/submit-jobs.sh:ro
     - ./local/flink/sql-shell.sh:/opt/flink/bin/sql-shell.sh:ro
+    - ./local/flink/schema-env.sh:/opt/flink/bin/schema-env.sh:ro
+    - ./schemas:/opt/flink/schemas:ro
 
 services:
   kafka:
@@ -263,6 +266,10 @@ services:
       KAFKA_CLUSTERS_0_NAME: fleet
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+      # Decode values with the registry by default (keys are plain strings).
+      # Without this Kafbat's default is String, which shows Avro as bytes.
+      KAFKA_CLUSTERS_0_DEFAULTKEYSERDE: String
+      KAFKA_CLUSTERS_0_DEFAULTVALUESERDE: SchemaRegistry
       KAFKA_CLUSTERS_0_READONLY: "true"
       DYNAMIC_CONFIG_ENABLED: "false"
       JAVA_OPTS: -Xmx384m
@@ -274,6 +281,7 @@ services:
       schema-init: { condition: service_completed_successfully }
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
     command: ["node", "seed.js"]
 
   fleet-app:
@@ -286,6 +294,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
       LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}   # for the /api/ask chat agent
       LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}   # shown in the console (Flink makes the calls)
       # The chat agent's model. 3b, not 7b: given the agent's long tool-calling

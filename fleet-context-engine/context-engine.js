@@ -13,14 +13,14 @@
 // submission, 10-60+s depending on pool load) - tailing Kafka directly in
 // the background is the right way to serve a real-time read model.
 //
-// Every topic carries plain JSON (no schema registry), so each message
-// value is parsed directly.
+// Every topic carries Avro, each value decoded with the schema its writer
+// used (kafka-client.js's decodeValue, via Schema Registry).
 //
 // If KAFKA_BOOTSTRAP isn't set, this module falls back to the original
 // in-memory simulator so the console still works with a plain `npm start`
 // and no Kafka at all.
 
-import { ALL_TOPICS, getKafka, produceRecord, purgeAllTopics } from './kafka-client.js';
+import { ALL_TOPICS, decodeValue, getKafka, produceRecord, purgeAllTopics } from './kafka-client.js';
 import { remember } from './query-store.js';
 
 const GEOZONES = [
@@ -70,10 +70,6 @@ function newInjectionId() {
 
 export function isLiveModeConfigured() {
   return Boolean(process.env.KAFKA_BOOTSTRAP);
-}
-
-function decodeValue(buffer) {
-  return JSON.parse(buffer.toString('utf8'));
 }
 
 // How close in time (via receivedAt) a heuristic overspeed event and an AI
@@ -254,14 +250,24 @@ class LiveContextEngine {
     });
     await admin.disconnect();
 
+    const undecodable = new Map(); // topic -> records skipped
     await consumer.run({
       eachMessage: async ({ topic, partition, message }) => {
         if (!message.value) return;
         let record;
         try {
-          record = decodeValue(message.value);
-        } catch {
-          return; // skip anything that isn't valid JSON
+          record = await decodeValue(topic, message.value);
+        } catch (err) {
+          // Every producer writes through the registry, so this is a bug
+          // (or a record left from the JSON version: `make reset`). Skip it
+          // so the console keeps running, but say so - the first time per
+          // topic, then every 100th.
+          const n = (undecodable.get(topic) ?? 0) + 1;
+          undecodable.set(topic, n);
+          if (n === 1 || n % 100 === 0) {
+            console.error(`[fleet-context-engine] ${topic}: skipped ${n} undecodable record(s), latest at partition ${partition} offset ${message.offset}: ${err.message}`);
+          }
+          return;
         }
         this._applyRecord(topic, record, Number(message.timestamp));
         remember(topic, record, message.timestamp); // for SQL via MCP - see query-store.js

@@ -11,7 +11,8 @@
 
 set -euo pipefail
 export PIPELINE=fleet-sql-shell
-envsubst '${PIPELINE}' < /opt/flink/sql/00-tables.sql > /tmp/sql-shell-init.sql
+source /opt/flink/bin/schema-env.sh
+envsubst "\${PIPELINE} \${SCHEMA_REGISTRY_URL}$SCHEMA_VARS" < /opt/flink/sql/00-tables.sql > /tmp/sql-shell-init.sql
 # Results as a scrolling table rather than the full-screen viewer, which
 # needs a real terminal size.
 echo "SET 'sql-client.execution.result-mode' = 'tableau';" >> /tmp/sql-shell-init.sql

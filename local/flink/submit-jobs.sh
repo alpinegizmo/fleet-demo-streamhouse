@@ -36,6 +36,9 @@ should_replace() {
 SQL_DIR=/opt/flink/sql
 REST="http://${FLINK_JOBMANAGER:-flink-jobmanager}:8081"
 
+# SCHEMA_<TOPIC> for each table's 'avro-confluent.schema' (see schema-env.sh).
+source /opt/flink/bin/schema-env.sh
+
 ACTIVE_STATES='["CREATED", "INITIALIZING", "RUNNING", "RESTARTING"]'
 
 running_jobs() {
@@ -73,7 +76,7 @@ for job in "$SQL_DIR"/*.sql; do
 
   echo "$name: submitting $(basename "$job")"
   export PIPELINE="$name"
-  envsubst '${PIPELINE}' < "$SQL_DIR/00-tables.sql" > "/tmp/$name-init.sql"
+  envsubst "\${PIPELINE} \${SCHEMA_REGISTRY_URL}$SCHEMA_VARS" < "$SQL_DIR/00-tables.sql" > "/tmp/$name-init.sql"
   envsubst '${PIPELINE} ${LLM_BASE_URL} ${LLM_MODEL} ${S3_ACCESS_KEY} ${S3_SECRET_KEY}' < "$job" > "/tmp/$name.sql"
   /opt/flink/bin/sql-client.sh -i "/tmp/$name-init.sql" -f "/tmp/$name.sql"
 done

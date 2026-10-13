@@ -4,17 +4,26 @@
 // telemetry simulator, the seed script, the demo-injection HTTP endpoints
 // (/api/inject-*) and the reset button all go through here. Reading is
 // handled separately by context-engine.js's background consumer, which
-// shares the same client via getKafka().
+// shares the same client via getKafka() and decodes with decodeValue().
 //
-// Records are plain JSON - no schema registry, no wire-format header. The
-// schema contract for each topic lives in the Flink table DDL instead
-// (local/flink/sql/), so a record whose shape doesn't match is skipped by
-// Flink rather than rejected at produce time.
+// Record values are Avro in Confluent's wire format (a 0 byte, the 4-byte
+// schema ID, then the Avro body), checked against the topic's registered
+// schema (schemas/<topic>.avsc, registered by schema-init) as they're
+// written: a record that doesn't fit is rejected here, before it reaches the
+// topic. Two things to know about that check: fields the schema doesn't
+// have are dropped silently, not rejected (so a misspelled field name just
+// vanishes), and only clients that go through a serializer are checked at
+// all - Apache Kafka itself accepts any bytes. This process never registers
+// schemas (autoRegisterSchemas: false): it uses the latest registered
+// version, and a topic with none fails.
 //
 // Configured via KAFKA_BOOTSTRAP (e.g. kafka:9092 inside docker compose,
-// localhost:9094 from the host).
+// localhost:9094 from the host) and SCHEMA_REGISTRY_URL
+// (http://schema-registry:8081 inside compose, http://localhost:8085 from
+// the host).
 
 import { Kafka, logLevel } from 'kafkajs';
+import { AvroDeserializer, AvroSerializer, SchemaRegistryClient, SerdeType, SerializationError } from '@confluentinc/schemaregistry';
 
 // Every topic in the pipeline, in pipeline order. Created up front by the
 // kafka-init service in docker-compose.yml (auto-create is off on the
@@ -45,6 +54,44 @@ export function getKafka() {
   return kafka;
 }
 
+let serdes = null;
+
+// One serializer and one deserializer serve every topic: the subject is
+// derived from the topic (<topic>-value), and both cache schemas by subject
+// and ID, so the registry is asked once per topic, not once per record.
+function getSerdes() {
+  if (!process.env.SCHEMA_REGISTRY_URL) {
+    throw new Error('Missing SCHEMA_REGISTRY_URL environment variable (e.g. http://schema-registry:8081). See SETUP.md.');
+  }
+  if (!serdes) {
+    const client = new SchemaRegistryClient({ baseURLs: [process.env.SCHEMA_REGISTRY_URL] });
+    serdes = {
+      serializer: new AvroSerializer(client, SerdeType.VALUE, { autoRegisterSchemas: false, useLatestVersion: true }),
+      deserializer: new AvroDeserializer(client, SerdeType.VALUE, {}),
+    };
+  }
+  return serdes;
+}
+
+// A record that doesn't fit its schema throws "<topic>: record rejected by
+// its schema - Invalid message at <field>, expected ..., got ...". Anything
+// else (registry unreachable, no schema registered) is passed on as is.
+export async function encodeValue(topic, record) {
+  const { serializer } = getSerdes();
+  try {
+    return await serializer.serialize(topic, record);
+  } catch (err) {
+    if (err instanceof SerializationError) throw new Error(`${topic}: record rejected by its schema - ${err.message}`);
+    throw err;
+  }
+}
+
+// Reads the writer's schema ID from the record and decodes with that schema
+// (fetched from the registry once per ID).
+export async function decodeValue(topic, buffer) {
+  return getSerdes().deserializer.deserialize(topic, buffer);
+}
+
 function getProducer() {
   if (!producerPromise) {
     const producer = getKafka().producer({ allowAutoTopicCreation: false });
@@ -61,12 +108,12 @@ function recordKey(record) {
   return record.object_id ?? record.vehicle_id ?? record.geozone ?? null;
 }
 
+// Serializes the whole batch before sending any of it, so one record that
+// breaks the schema rejects the batch instead of half-producing it.
 export async function produceRecords(topic, records) {
+  const messages = await Promise.all(records.map(async (r) => ({ key: recordKey(r), value: await encodeValue(topic, r) })));
   const producer = await getProducer();
-  return producer.send({
-    topic,
-    messages: records.map((r) => ({ key: recordKey(r), value: JSON.stringify(r) })),
-  });
+  return producer.send({ topic, messages });
 }
 
 export async function produceRecord(topic, record) {

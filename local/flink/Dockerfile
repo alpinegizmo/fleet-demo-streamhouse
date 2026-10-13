@@ -12,6 +12,15 @@ ARG MAVEN=https://repo1.maven.org/maven2
 RUN wget -q -P /opt/flink/lib \
       ${MAVEN}/org/apache/flink/flink-sql-connector-kafka/5.0.0-2.2/flink-sql-connector-kafka-5.0.0-2.2.jar
 
+# The avro-confluent format (Avro + Schema Registry) behind every table in
+# sql/00-tables.sql. In opt/, not lib/, for the same kind of reason as the
+# OpenAI jar below: it bundles an unrelocated zstd-jni 1.5.5, which in lib/
+# sorts ahead of iceberg-flink-runtime's 1.5.7 and would replace it under
+# Iceberg's Parquet writer. 00-tables.sql loads it with ADD JAR instead, so
+# Iceberg keeps its own.
+RUN wget -q -P /opt/flink/opt \
+      ${MAVEN}/org/apache/flink/flink-sql-avro-confluent-registry/2.2.1/flink-sql-avro-confluent-registry-2.2.1.jar
+
 # The OpenAI model provider behind CREATE MODEL / ML_PREDICT in
 # sql/20-ai.sql (works with any OpenAI-compatible server, e.g. Ollama).
 # Deliberately in opt/, not lib/: it bundles an older, unrelocated Apache

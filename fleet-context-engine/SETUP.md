@@ -27,7 +27,7 @@ this page is about what it does and how to run it on its own.
 
 | Mode | When | Data |
 |---|---|---|
-| **LOCAL** | `KAFKA_BOOTSTRAP` is set (compose sets `kafka:9092`) | the real pipeline |
+| **LOCAL** | `KAFKA_BOOTSTRAP` is set (compose sets `kafka:9092`); needs `SCHEMA_REGISTRY_URL` too | the real pipeline |
 | **SIMULATED** | `KAFKA_BOOTSTRAP` unset | an in-memory simulator, clearly labelled in the console — enough for UI work with no Kafka at all |
 
 ## Running it outside Docker
@@ -36,7 +36,7 @@ this page is about what it does and how to run it on its own.
 cd fleet-context-engine
 npm install
 npm start                                      # SIMULATED
-KAFKA_BOOTSTRAP=localhost:9094 npm start       # LOCAL, against the compose stack's Kafka
+KAFKA_BOOTSTRAP=localhost:9094 SCHEMA_REGISTRY_URL=http://localhost:8085 npm start   # LOCAL, against the compose stack
 ```
 
 Against the compose stack, stop the `fleet-app` container first
@@ -47,6 +47,7 @@ Against the compose stack, stop the `fleet-app` container first
 | Variable | |
 |---|---|
 | `KAFKA_BOOTSTRAP` | Kafka bootstrap servers; unset = SIMULATED |
+| `SCHEMA_REGISTRY_URL` | Schema Registry (LOCAL mode): record values are Avro, checked against each topic's registered schema |
 | `HTTP_PORT` / `PORT` | listening port (default 8787) |
 | `AUTO_TELEMETRY` | `false` stops the simulator |
 | `SIM_PACE` | the simulator's starting pace: `normal` (every vehicle every 3 s), `slow` (15 s), `minimal` (30 s) |
@@ -85,8 +86,8 @@ All `GET` unless noted; the console polls these every ~3 s.
 `queryData` is real SQL — joins across topics, aggregates, window functions.
 Each topic is a table named like `vehicle_telemetry` (or `"vehicle.telemetry"`),
 and every table has `kafka_timestamp` for time filters. Schemas come from
-`topic-schemas.js`, which mirrors the Flink DDL in
-`local/flink/sql/00-tables.sql` — change both together.
+`topic-schemas.js`, which reads each topic's Avro schema from `schemas/` at
+startup — the same files `schema-init` registers.
 
 Because the SQL comes from models and arbitrary clients, every query runs in
 a fresh in-memory DuckDB that is locked down first (`query-store.js`): no
