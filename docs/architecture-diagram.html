@@ -148,7 +148,7 @@
 
   <!-- DOCKER COMPOSE OUTER -->
   <div class="group blue" style="top:88px; left:240px; width:1290px; height:580px;">
-    <div class="group-label" style="color:var(--blue);">docker compose — Apache Kafka 4.3 · Apache Flink 2.2 · Iceberg REST catalog · RustFS</div>
+    <div class="group-label" style="color:var(--blue);">docker compose — Apache Kafka 4.3 · Apache Flink 2.2 · Confluent Schema Registry · Iceberg REST catalog · RustFS</div>
   </div>
 
   <!-- RAW TOPICS -->
@@ -165,8 +165,10 @@
     Flink SQL
     <div class="sub">fleet-business job<br>10-business.sql — rules +<br>per-vehicle z-score</div>
   </div>
-  <div class="callout" style="top:372px; left:420px; width:200px;">
-    plain JSON; the Flink DDL is the schema contract (no registry)
+  <!-- SCHEMA REGISTRY -->
+  <div class="box gray" style="top:368px; left:420px; width:200px; height:82px;">
+    Confluent Schema Registry
+    <div class="sub">:8085 · read-only<br>11 Avro schemas (schemas/),<br>checked by every producer<br>and consumer</div>
   </div>
 
   <!-- BUSINESS TOPICS -->

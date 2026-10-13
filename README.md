@@ -1,11 +1,16 @@
 # Fleet Telemetry Demo — a local streamhouse
 
-A delivery fleet in Melbourne, end to end, running entirely on your laptop
-with open-source components: vehicle telemetry flows through Apache Kafka,
-Apache Flink turns it into business events and — with a small local LLM
-called from inside the stream — AI recommendations, and three independent
-consumers use the same data: a live dashboard, AI agents over MCP, and
-Apache Iceberg tables queried with DuckDB.
+A delivery fleet in Melbourne, end to end, running entirely on your laptop:
+vehicle telemetry flows through Apache Kafka, Apache Flink turns it into
+business events and — with a small local LLM called from inside the
+stream — AI recommendations, and three independent consumers use the same
+data: a live dashboard, AI agents over MCP, and Apache Iceberg tables
+queried with DuckDB. Every topic carries Avro, checked against Confluent
+Schema Registry.
+
+Everything is open source except Schema Registry, which is source-available
+under the Confluent Community License: free to use and modify, but not to
+offer as a competing hosted service.
 
 (This demo originally ran on Confluent Cloud with Tableflow, RTCE and a
 hosted LLM; that version is in git history at `f8c3ee1`.)
@@ -40,13 +45,14 @@ data; `make reset` also deletes the data.
 
 | Service | What it is | Address |
 |---|---|---|
-| `kafka` | Apache Kafka 4.3, single KRaft node, 11 topics (plain JSON, no schema registry) | `localhost:9094` from the host |
+| `kafka` | Apache Kafka 4.3, single KRaft node, 11 topics, Avro on every one | `localhost:9094` from the host |
+| `schema-registry` | Confluent Schema Registry 8.2: one Avro schema per topic, compatibility `FULL`, read-only once registered | REST API: http://localhost:8085 |
 | `flink-jobmanager`, `flink-taskmanager` | Apache Flink 2.2 running three SQL jobs: `fleet-business`, `fleet-ai`, `fleet-lakehouse` | Flink UI: http://localhost:8081 |
 | `objectstore` | RustFS, S3-compatible storage for the Iceberg tables | console: http://localhost:9001/rustfs/console/ (`fleet` / `fleet-secret`) |
-| `kafka-ui` | Kafbat UI (read-only): topics, messages, consumer groups and lag | http://localhost:8080 |
+| `kafka-ui` | Kafbat UI (read-only): topics, messages (decoded through the registry), schemas, consumer groups and lag | http://localhost:8080 |
 | `iceberg-rest` | Iceberg REST catalog (the Iceberg project's reference server) | http://localhost:8181 |
 | `fleet-app` | `fleet-context-engine`: Kafka consumer, telemetry simulator, HTTP API, the console, the MCP server | http://localhost:8787 (console), `/mcp` (MCP) |
-| one-shot | `kafka-init` (topics), `objectstore-init` (bucket), `seed` (backfill), `flink-sql-init` (submits the SQL jobs) | |
+| one-shot | `kafka-init` (topics), `schema-init` (registers `schemas/`), `objectstore-init` (bucket), `seed` (backfill), `flink-sql-init` (submits the SQL jobs) | |
 | `duckdb` | DuckDB shell with the Iceberg catalog attached (`make duckdb`; not started by `up`) | |
 | Ollama (host) | `qwen2.5:7b` for Flink's `ML_PREDICT` recommendations, `qwen2.5:3b` for the chat agent; OpenAI-compatible API | `localhost:11434` |
 
@@ -87,8 +93,25 @@ older than an hour (keeping at least 10), compacts the small files that
 every checkpoint leaves, deletes orphaned files, and keeps only the last 10
 `metadata.json` files per table.
 
-All table definitions live in `local/flink/sql/00-tables.sql` — with no
-schema registry, that DDL *is* the schema contract.
+**Schemas.** Each topic's value schema is an Avro file in `schemas/`, and
+those files are the contract. On `make up`, `schema-init` registers them
+(subjects named `<topic>-value`) with compatibility `FULL`, then switches
+the registry to read-only, so nothing else can register or change a
+schema. The Node producers and consumers use Confluent's
+`@confluentinc/schemaregistry` serializer with each subject's registered
+version and never register anything: a record that doesn't fit its schema
+is rejected before it's sent. Flink's tables (`local/flink/sql/00-tables.sql`)
+use the `avro-confluent` format and are handed the exact registered schema,
+so Flink's writes carry the same schema ID as Node's. The MCP tools' table
+definitions (`fleet-context-engine/topic-schemas.js`) are read from the
+same files.
+
+To change a schema, edit its `.avsc` and the matching table in
+`00-tables.sql`, then `make up`. A compatible change, such as a new
+nullable field with a default, becomes version 2. An incompatible one,
+such as a field changing type, makes `schema-init` exit 1 with the
+registry's reason, and nothing that depends on it starts. Replace the jobs
+that use the table (`make replace JOB=…`) to pick the new schema up.
 
 ## Using it
 
@@ -96,9 +119,10 @@ schema registry, that DDL *is* the schema contract.
 dashboards (Safety, Delivery Ops, Maintenance), Live Pipeline (raw
 diagnostics), and Behind the Scenes (an animated diagram driven by real
 topic arrivals, real Iceberg commits and real agent queries). The top bar
-links out to the systems' own web UIs — Flink UI, Kafka UI (Kafbat) and the
-object store console — and on Behind the Scenes the Kafka, Flink and Iceberg
-boxes are clickable too: each Flink box opens *that* job in the Flink UI.
+links out to the systems' own web UIs — Flink UI, Kafka UI (Kafbat), its
+Schemas page and the object store console — and on Behind the Scenes the
+Kafka, Flink, Iceberg and Schema Registry boxes are clickable too: each
+Flink box opens *that* job in the Flink UI.
 Demo controls produce real records: *Inject engine spike* → maintenance alert →
 AI recommendation, usually within a second or two; *Inject speed anomaly*
 shows the fixed rule and the per-vehicle baseline side by side on the
@@ -164,7 +188,7 @@ FROM lake.fleet.ai_safety_recommendations GROUP BY ALL ORDER BY minute DESC, 3 D
 | Here (open source) | Confluent Cloud equivalent |
 |---|---|
 | Apache Kafka, topics created by `kafka-init` | Kafka cluster; topics created by Flink `CREATE TABLE` |
-| Plain JSON; the Flink DDL is the schema | Schema Registry + `json-registry` format |
+| Schema Registry + Flink's `avro-confluent` format; schemas in `schemas/`, registered by `schema-init` | Confluent Cloud Schema Registry + `avro-registry` format; Flink `CREATE TABLE` registers the schema |
 | Flink SQL client submitting statement sets (`submit-jobs.sh`) | Flink statements (`confluent_flink_statement`) |
 | `ML_PREDICT(TABLE …, MODEL …, DESCRIPTOR(…))` → Ollama | `ML_PREDICT('model', …)` → OpenAI / Bedrock connection |
 | Per-vehicle z-score in an OVER window | `AI_DETECT_ANOMALIES` |
@@ -196,6 +220,24 @@ next `make up`; the jobs are resubmitted and resume from their offsets.
   grew the tables' metadata to 65 GB in four days and took the object store
   down. Maintenance runs inside the lakehouse job, so when that job is
   failing, maintenance stops too. (Tableflow runs this as a managed service.)
+- **The broker doesn't enforce schemas.** Apache Kafka accepts any bytes;
+  only clients that use the serializer are checked, and anything else can
+  write to a topic. Confluent Platform and Confluent Cloud can validate
+  schema IDs at the broker.
+- **A bad record stops a Flink job until it's gone.** A record that
+  doesn't decode (wrong format, unknown schema ID) fails the job, which
+  restarts without limit and fails on the same record each time. The console
+  just goes quiet; the Flink UI shows the job restarting, with root cause
+  e.g. `Unknown data format. Magic number does not match`. Flink's Avro
+  format has no option to skip such records. `make reset` clears it, as does
+  deleting that topic's records up to and past the bad one.
+- **Unknown fields are dropped silently.** The Avro serializer encodes only
+  the schema's fields, so a misspelled field (`injectionId` for
+  `injection_id`) disappears without an error. Wrong types, a float in an
+  `int`, and a missing key are rejected.
+- **Upgrading from the JSON version needs `make reset`.** Before Schema
+  Registry, the topics held plain JSON, which the Avro consumers can't
+  read.
 - **No Flink HA.** Anything that recreates the jobmanager (including
   rebuilding the Flink image) drops the running jobs until `flink-sql-init`
   runs again — `make up` does that.
@@ -229,6 +271,16 @@ next `make up`; the jobs are resubmitted and resume from their offsets.
   shows what's running.
 - **Port 8787 already in use.** `APP_PORT=8788 make up`, or find the process
   with `lsof -i :8787`.
+- **`schema-init` exited 1** (`make up` stops with a failed dependency). A
+  change to `schemas/` isn't compatible with what's registered; `docker
+  compose logs schema-init` gives the registry's reason and the field.
+  Revert it, or start over with `make reset`.
+- **A Flink job keeps restarting with "Failed to deserialize consumer
+  record".** Look further down the root cause. `Magic number does not match`
+  is a bad record on the topic (see Known limitations). `Could not register
+  schema` with `read-only mode; error code: 42205` is a failed *write*: the
+  schema inlined into the job no longer matches the registered one, so
+  replace the job after `make up` has registered the change.
 - **Console says SIMULATED.** `fleet-context-engine` is running without
   `KAFKA_BOOTSTRAP` (e.g. plain `npm start`) — see
   [`fleet-context-engine/SETUP.md`](fleet-context-engine/SETUP.md).
@@ -247,7 +299,8 @@ current window, so the number falls as incidents age out.
 | Path | |
 |---|---|
 | `docker-compose.yml`, `Makefile` | the whole stack |
-| `local/flink/` | Flink image, SQL jobs (`sql/`), `submit-jobs.sh`, `sql-shell.sh` |
+| `schemas/` | one Avro schema per topic, registered by `schema-init` (`fleet-context-engine/register-schemas.js`) |
+| `local/flink/` | Flink image, SQL jobs (`sql/`), `submit-jobs.sh`, `sql-shell.sh`, `schema-env.sh` |
 | `local/duckdb/` | DuckDB image and the catalog-attach script |
 | `fleet-context-engine/` | the Node app — see its [`SETUP.md`](fleet-context-engine/SETUP.md) |
 | `fleet-intelligence-console.html`, `fonts/` | the console (served by `fleet-app`) |

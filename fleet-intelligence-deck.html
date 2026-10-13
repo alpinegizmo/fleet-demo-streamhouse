@@ -318,7 +318,7 @@
     <div class="cols">
       <ul class="points">
         <li><div class="bar" style="background:var(--tel);"></div><div><b>Apache Kafka</b><span class="sub">The durable event log every downstream system reads from — no producer coupled to any one consumer.</span></div></li>
-        <li><div class="bar" style="background:var(--maint);"></div><div><b>Flink SQL</b><span class="sub">Stream processing written as SQL — not a bespoke consumer application per team, per language. The table definitions double as the schema contract.</span></div></li>
+        <li><div class="bar" style="background:var(--maint);"></div><div><b>Flink SQL</b><span class="sub">Stream processing written as SQL — not a bespoke consumer application per team, per language. Its tables read and write Avro against Schema Registry, the one contract every producer and consumer checks.</span></div></li>
         <li><div class="bar" style="background:var(--ai);"></div><div><b>Model calls inside the stream</b><span class="sub"><code style="font-family:var(--mono);">ML_PREDICT</code> calls a local model (Ollama, OpenAI-compatible) from a Flink SQL statement — no separate inference service to build, deploy, or scale.</span></div></li>
         <li><div class="bar" style="background:var(--delivery);"></div><div><b>Apache Iceberg</b><span class="sub">Flink also commits the derived streams as open tables, so analytics engines (DuckDB here) query the same data without a separate pipeline.</span></div></li>
       </ul>
@@ -409,7 +409,7 @@
 <span class="cmd">open http://localhost:8787</span></pre>
       </div>
       <div>
-        <p class="lede" style="margin-bottom:6px;">Everything is open source and local: no cloud account, no API keys. A one-shot seed backfills history; a simulator keeps 12 vehicles reporting every 3 seconds.</p>
+        <p class="lede" style="margin-bottom:6px;">Everything is local: no cloud account, no API keys. All open source, except Confluent Schema Registry, which is source-available. A one-shot seed backfills history; a simulator keeps 12 vehicles reporting every 3 seconds.</p>
         <div class="timeline">
           <div class="trow"><div class="t">t+0</div><div class="d"><b>make up</b> — the first run builds images, which takes a few minutes.</div></div>
           <div class="trow"><div class="t">~40 s</div><div class="d"><b>Stack up</b>: topics created, 485 seed records produced, three Flink jobs submitted.</div></div>
@@ -425,7 +425,7 @@
     <h2 class="slide-title">Every local piece has<br>a Confluent Cloud counterpart</h2>
     <div class="recap">
       <div class="row"><div class="k">Kafka</div><div class="v">Apache Kafka in Docker → <b>a managed Kafka cluster</b></div></div>
-      <div class="row"><div class="k">Schemas</div><div class="v">Plain JSON, the Flink DDL as contract → <b>Schema Registry</b>, enforced on every topic</div></div>
+      <div class="row"><div class="k">Schemas</div><div class="v">Schema Registry in Docker, checked by every client → <b>managed Schema Registry</b>, with optional validation at the broker</div></div>
       <div class="row"><div class="k">Flink</div><div class="v">A Flink cluster and SQL client → <b>Flink statements</b> on a compute pool</div></div>
       <div class="row"><div class="k">AI</div><div class="v"><code style="font-family:var(--mono);">ML_PREDICT</code> to Ollama → <b>ML_PREDICT</b> to a hosted model</div></div>
       <div class="row"><div class="k">Anomalies</div><div class="v">A z-score in an OVER window → <b>AI_DETECT_ANOMALIES</b></div></div>
