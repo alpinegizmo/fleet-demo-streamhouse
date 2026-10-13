@@ -1,0 +1,93 @@
+{
+  "type": "record",
+  "name": "VehicleTelemetry",
+  "namespace": "fleet",
+  "doc": "Raw per-vehicle GPS/engine/sensor telemetry, one record per vehicle every ~3 seconds. Speed is position.speed (km/h); engine temperature is inputs.calculated_inputs.temperature (C).",
+  "fields": [
+    {"name": "object_id", "type": "string"},
+    {"name": "datetime", "type": ["null", "string"], "default": null},
+    {"name": "ignition_status", "type": ["null", "string"], "default": null},
+    {"name": "trip_type", "type": ["null", "string"], "default": null},
+    {"name": "position", "type": ["null", {
+      "type": "record",
+      "name": "Position",
+      "fields": [
+        {"name": "altitude", "type": ["null", "double"], "default": null},
+        {"name": "longitude", "type": ["null", "double"], "default": null},
+        {"name": "latitude", "type": ["null", "double"], "default": null},
+        {"name": "direction", "type": ["null", "double"], "default": null},
+        {"name": "satellites_count", "type": ["null", "int"], "default": null},
+        {"name": "speed", "type": ["null", "double"], "default": null}
+      ]
+    }], "default": null},
+    {"name": "inputs", "type": ["null", {
+      "type": "record",
+      "name": "Inputs",
+      "fields": [
+        {"name": "other", "type": ["null", {
+          "type": "record",
+          "name": "OtherInputs",
+          "fields": [
+            {"name": "country_code_geonames", "type": ["null", "double"], "default": null},
+            {"name": "virtual_gps_odometer", "type": ["null", "double"], "default": null}
+          ]
+        }], "default": null},
+        {"name": "calculated_inputs", "type": ["null", {
+          "type": "record",
+          "name": "CalculatedInputs",
+          "fields": [
+            {"name": "fuel_consumption", "type": ["null", "double"], "default": null},
+            {"name": "fuel_level", "type": ["null", "double"], "default": null},
+            {"name": "mileage", "type": ["null", "double"], "default": null},
+            {"name": "rpm", "type": ["null", "double"], "default": null},
+            {"name": "temperature", "type": ["null", "double"], "default": null},
+            {"name": "weight", "type": ["null", "double"], "default": null}
+          ]
+        }], "default": null},
+        {"name": "device_inputs", "type": ["null", {
+          "type": "record",
+          "name": "DeviceInputs",
+          "fields": [
+            {"name": "priority", "type": ["null", "string"], "default": null},
+            {"name": "movement", "type": ["null", "string"], "default": null},
+            {"name": "hdop", "type": ["null", "string"], "default": null},
+            {"name": "power_supply_voltage", "type": ["null", "double"], "default": null},
+            {"name": "battery_voltage", "type": ["null", "double"], "default": null},
+            {"name": "gps_speed", "type": ["null", "double"], "default": null},
+            {"name": "gsm_signal_strength", "type": ["null", "double"], "default": null},
+            {"name": "operator", "type": ["null", "double"], "default": null},
+            {"name": "engine_rpm", "type": ["null", "double"], "default": null},
+            {"name": "canbus_engine_coolant_temperature", "type": ["null", "double"], "default": null},
+            {"name": "fuel_level_can", "type": ["null", "double"], "default": null},
+            {"name": "speed_wheel", "type": ["null", "double"], "default": null},
+            {"name": "overspeeding_events", "type": ["null", "string"], "default": null},
+            {"name": "ecodrive_braking_events", "type": ["null", "double"], "default": null},
+            {"name": "ecodrive_harsh_acceleration", "type": ["null", "double"], "default": null},
+            {"name": "ecodrive_idling_time", "type": ["null", "double"], "default": null},
+            {"name": "lcv_driver_doors", "type": ["null", "string"], "default": null},
+            {"name": "lcv_left_back_doors", "type": ["null", "string"], "default": null},
+            {"name": "lcv_right_back_doors", "type": ["null", "string"], "default": null}
+          ]
+        }], "default": null},
+        {"name": "tires", "type": ["null", {"type": "array", "items": ["null", {
+          "type": "record",
+          "name": "Tire",
+          "fields": [
+            {"name": "tire_id", "type": ["null", "string"], "default": null},
+            {"name": "tire_pressure", "type": ["null", "double"], "default": null},
+            {"name": "tire_temperature", "type": ["null", "double"], "default": null},
+            {"name": "tire_air_leakage_rate", "type": ["null", "double"], "default": null},
+            {"name": "tire_pressure_threshold_detection", "type": ["null", "int"], "default": null},
+            {"name": "tire_status", "type": ["null", "int"], "default": null},
+            {"name": "tire_sensor_electrical_fault", "type": ["null", "int"], "default": null},
+            {"name": "tire_sensor_enable_status", "type": ["null", "int"], "default": null},
+            {"name": "tire_location", "type": ["null", "int"], "default": null},
+            {"name": "tire_extended_tire_pressure_support", "type": ["null", "int"], "default": null}
+          ]
+        }]}], "default": null}
+      ]
+    }], "default": null},
+    {"name": "geozone_ids", "type": ["null", {"type": "array", "items": ["null", "string"]}], "default": null},
+    {"name": "injection_id", "type": ["null", "string"], "default": null, "doc": "Set only on records produced by the console's inject buttons, and carried through every topic derived from them, so a recommendation can be traced back to the injection that caused it. Null otherwise."}
+  ]
+}

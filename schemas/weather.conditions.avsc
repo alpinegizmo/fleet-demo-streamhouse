@@ -1,0 +1,13 @@
+{
+  "type": "record",
+  "name": "WeatherCondition",
+  "namespace": "fleet",
+  "doc": "Weather per geozone, updated every ~20 seconds.",
+  "fields": [
+    {"name": "geozone", "type": "string"},
+    {"name": "condition", "type": ["null", "string"], "default": null},
+    {"name": "temp_c", "type": ["null", "double"], "default": null},
+    {"name": "wind_kph", "type": ["null", "double"], "default": null},
+    {"name": "updated_at", "type": ["null", "string"], "default": null}
+  ]
+}

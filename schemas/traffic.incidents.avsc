@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "name": "TrafficIncident",
+  "namespace": "fleet",
+  "doc": "Traffic incidents per geozone (congestion, road closure, collision reported, roadworks) with severity low/medium/high.",
+  "fields": [
+    {"name": "geozone", "type": "string"},
+    {"name": "type", "type": ["null", "string"], "default": null},
+    {"name": "severity", "type": ["null", "string"], "default": null},
+    {"name": "timestamp", "type": ["null", "string"], "default": null}
+  ]
+}

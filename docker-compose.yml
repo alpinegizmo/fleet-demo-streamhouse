@@ -14,6 +14,7 @@
 #   docker compose up --build        # then open http://localhost:8787 (or $APP_PORT)
 #                                    # Flink UI: http://localhost:8081
 #                                    # Kafka UI: http://localhost:8080
+#                                    # Schema Registry API: http://localhost:8085
 #                                    # object store console: http://localhost:9001/rustfs/console/
 #   docker compose run --rm duckdb   # SQL shell on the Iceberg tables
 #   docker compose down -v           # stop and delete all data
@@ -114,6 +115,40 @@ services:
         done
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
 
+  # Confluent Schema Registry: the value schema of every topic, from
+  # schemas/*.avsc (registered by schema-init, below). Stores them in the
+  # _schemas topic on the same broker, so `make reset` clears it too.
+  # Licensed under the Confluent Community License - source-available and
+  # free to use, but the one component here that isn't open source.
+  schema-registry:
+    image: confluentinc/cp-schema-registry:8.2.4
+    depends_on:
+      kafka: { condition: service_healthy }
+    ports:
+      - "8085:8081"   # 8081 on the host is the Flink UI
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
+      SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR: 1
+      SCHEMA_REGISTRY_HEAP_OPTS: -Xms128m -Xmx256m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/subjects > /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: registers schemas/*.avsc (compatibility FULL), then makes the
+  # registry read-only. Exits non-zero on an incompatible schema change, and
+  # nothing that depends on it starts. See fleet-context-engine/register-schemas.js.
+  schema-init:
+    build: { context: ., provenance: false }
+    depends_on:
+      schema-registry: { condition: service_healthy }
+    environment:
+      SCHEMA_REGISTRY_URL: http://schema-registry:8081
+    command: ["node", "register-schemas.js"]
+
   # S3-compatible object store holding the Iceberg tables' data and
   # metadata files.
   objectstore:
@@ -210,20 +245,24 @@ services:
     command: submit-jobs.sh
     depends_on:
       kafka-init: { condition: service_completed_successfully }
+      schema-init: { condition: service_completed_successfully }
       iceberg-rest: { condition: service_healthy }
       flink-taskmanager: { condition: service_started }
 
-  # Web UI for Kafka (Kafbat UI): topics, messages, consumer groups and lag.
-  # Read-only, so nothing can be deleted or produced from it mid-demo.
+  # Web UI for Kafka (Kafbat UI): topics, messages, consumer groups and lag,
+  # and the registry's subjects and versions. Read-only, so nothing can be
+  # deleted or produced from it mid-demo.
   kafka-ui:
     image: ghcr.io/kafbat/kafka-ui:v1.5.0
     depends_on:
       kafka-init: { condition: service_completed_successfully }
+      schema-registry: { condition: service_healthy }
     ports:
       - "8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: fleet
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
       KAFKA_CLUSTERS_0_READONLY: "true"
       DYNAMIC_CONFIG_ENABLED: "false"
       JAVA_OPTS: -Xmx384m
@@ -232,6 +271,7 @@ services:
     build: { context: ., provenance: false }
     depends_on:
       kafka-init: { condition: service_completed_successfully }
+      schema-init: { condition: service_completed_successfully }
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
     command: ["node", "seed.js"]

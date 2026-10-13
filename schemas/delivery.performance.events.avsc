@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "DeliveryPerformanceEvent",
+  "namespace": "fleet",
+  "doc": "Derived by Flink: vehicles behind schedule (over 70 parcels onboard, under 5 delivered last hour) or ahead of schedule (15+ delivered last hour).",
+  "fields": [
+    {"name": "vehicle_id", "type": "string"},
+    {"name": "geozone", "type": ["null", "string"], "default": null},
+    {"name": "parcels_onboard", "type": ["null", "int"], "default": null},
+    {"name": "parcels_delivered_last_hour", "type": ["null", "int"], "default": null},
+    {"name": "performance_status", "type": ["null", "string"], "default": null},
+    {"name": "event_time", "type": ["null", "string"], "default": null}
+  ]
+}

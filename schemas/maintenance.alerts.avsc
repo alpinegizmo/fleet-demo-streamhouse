@@ -1,0 +1,15 @@
+{
+  "type": "record",
+  "name": "MaintenanceAlert",
+  "namespace": "fleet",
+  "doc": "Derived by Flink: a vehicle whose engine temperature exceeded 100C (severity high above 105C).",
+  "fields": [
+    {"name": "vehicle_id", "type": "string"},
+    {"name": "geozone", "type": ["null", "string"], "default": null},
+    {"name": "engine_temp_c", "type": ["null", "double"], "default": null},
+    {"name": "severity", "type": ["null", "string"], "default": null},
+    {"name": "message", "type": ["null", "string"], "default": null},
+    {"name": "event_time", "type": ["null", "string"], "default": null},
+    {"name": "injection_id", "type": ["null", "string"], "default": null, "doc": "Set only on records produced by the console's inject buttons, and carried through every topic derived from them, so a recommendation can be traced back to the injection that caused it. Null otherwise."}
+  ]
+}

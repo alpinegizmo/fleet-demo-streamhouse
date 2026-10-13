@@ -1,0 +1,16 @@
+{
+  "type": "record",
+  "name": "DriverRiskEvent",
+  "namespace": "fleet",
+  "doc": "Derived by Flink: driver-risk events from a fixed rule - the device flagged OVERSPEED, or harsh braking score above 0.7 (risk_level high if both).",
+  "fields": [
+    {"name": "vehicle_id", "type": "string"},
+    {"name": "geozone", "type": ["null", "string"], "default": null},
+    {"name": "speed_kmh", "type": ["null", "double"], "default": null},
+    {"name": "overspeed_status", "type": ["null", "string"], "default": null},
+    {"name": "harsh_braking_score", "type": ["null", "double"], "default": null},
+    {"name": "risk_level", "type": ["null", "string"], "default": null},
+    {"name": "event_time", "type": ["null", "string"], "default": null},
+    {"name": "injection_id", "type": ["null", "string"], "default": null, "doc": "Set only on records produced by the console's inject buttons, and carried through every topic derived from them, so a recommendation can be traced back to the injection that caused it. Null otherwise."}
+  ]
+}

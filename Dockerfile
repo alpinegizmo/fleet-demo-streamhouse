@@ -2,7 +2,8 @@
 # process, serves fleet-intelligence-console.html + fonts/ - see the
 # STATIC_ROOT comment in fleet-context-engine/http-server.js for why both
 # live under one process. The same image also runs the one-shot seed
-# (`node seed.js`) - see docker-compose.yml.
+# (`node seed.js`) and schema-init (`node register-schemas.js`) - see
+# docker-compose.yml.
 #
 # Normally built and run by `docker compose up` from the repo root.
 
@@ -14,6 +15,7 @@ COPY fleet-context-engine/package*.json ./fleet-context-engine/
 RUN cd fleet-context-engine && npm ci --omit=dev
 
 COPY fleet-context-engine ./fleet-context-engine
+COPY schemas ./schemas
 COPY fleet-intelligence-console.html ./
 COPY fonts ./fonts
 

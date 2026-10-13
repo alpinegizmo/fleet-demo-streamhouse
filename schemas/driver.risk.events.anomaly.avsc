@@ -1,0 +1,17 @@
+{
+  "type": "record",
+  "name": "DriverRiskAnomaly",
+  "namespace": "fleet",
+  "doc": "Derived by Flink: speed readings more than 3 standard deviations from that vehicle's own previous 30 readings (forecast_speed_kmh is the baseline mean; lower/upper_bound are mean ± 3σ).",
+  "fields": [
+    {"name": "vehicle_id", "type": "string"},
+    {"name": "geozone", "type": ["null", "string"], "default": null},
+    {"name": "speed_kmh", "type": ["null", "double"], "default": null},
+    {"name": "forecast_speed_kmh", "type": ["null", "double"], "default": null},
+    {"name": "lower_bound", "type": ["null", "double"], "default": null},
+    {"name": "upper_bound", "type": ["null", "double"], "default": null},
+    {"name": "risk_level", "type": ["null", "string"], "default": null},
+    {"name": "event_time", "type": ["null", "string"], "default": null},
+    {"name": "injection_id", "type": ["null", "string"], "default": null, "doc": "Set only on records produced by the console's inject buttons, and carried through every topic derived from them, so a recommendation can be traced back to the injection that caused it. Null otherwise."}
+  ]
+}

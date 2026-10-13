@@ -1,0 +1,13 @@
+{
+  "type": "record",
+  "name": "ParcelVolume",
+  "namespace": "fleet",
+  "doc": "Per-vehicle parcel load: parcels currently onboard and delivered in the last hour.",
+  "fields": [
+    {"name": "vehicle_id", "type": "string"},
+    {"name": "geozone", "type": ["null", "string"], "default": null},
+    {"name": "parcels_onboard", "type": ["null", "int"], "default": null},
+    {"name": "parcels_delivered_last_hour", "type": ["null", "int"], "default": null},
+    {"name": "timestamp", "type": ["null", "string"], "default": null}
+  ]
+}

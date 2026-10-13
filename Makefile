@@ -25,6 +25,7 @@ up:
 	@echo "MCP:          http://localhost:$${APP_PORT:-8787}/mcp"
 	@echo "Flink UI:     http://localhost:8081"
 	@echo "Kafka UI:     http://localhost:8080"
+	@echo "Schema Registry API: http://localhost:8085"
 	@echo "object store: http://localhost:9001/rustfs/console/  (fleet / fleet-secret)"
 
 down:
